@@ -1,0 +1,4869 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local KAAN = {
+ESP = {
+Enabled = true,
+EnemyOnly = true,
+ShowBomb = true,
+ShowPing = true,
+Highlight = true,
+Names = true,
+Health = true,
+Weapon = true, -- Novo
+DroppedWeapons = true, -- Novo
+C4Timer = true -- Novo
+},
+Visuals = { -- Nova Categoria Config
+NoFlash = false,
+NoSmoke = false,
+SmokeTimer = true,
+SmokeIcon = true,
+DamageEsp = true,
+HitmarkerDuration = 4.0,
+ViewArrows = true, -- New Feature
+ArrowRadius = 300,  -- New Feature
+ArrowColor = Color3.fromRGB(255, 50, 50),
+Crosshair = { X = 0, Y = 0 },
+Radar = { -- PROJETO RADAR ESP
+Enabled = true,
+Size = 250,
+Range = 200,
+TeamCheck = false,
+EnemyColor = Color3.fromRGB(255, 0, 0),
+TeamColor = Color3.fromRGB(0, 255, 0),
+BackgroundAlpha = 0.99 -- Quase transparente para overlay
+}
+},
+Aim = {
+Enabled = true,
+Mode = "Always",
+Key = Enum.KeyCode.E,
+Active = true,
+FOV = 20,
+BaseFOV = 20, -- Backup para Auto Sniper FOV
+Part = "Auto",
+ShowFOV = true,
+Smoothness = 15,
+AutoStop = false,
+BodyIfLethal = true,
+NoRecoil = false,
+RecoilControl = 5 -- 0 a 10
+},
+Trigger = {
+Enabled = true,
+ReactionDelayEnabled = true,
+Delay = 0.05,
+ShotDelayEnabled = true,
+ShotDelay = 0.1,
+Mode = "Always",
+Active = true,
+Key = Enum.KeyCode.CapsLock,
+ScopeCheck = false -- Check de Scope para Snipers (Legit)
+},
+Rage = {
+Enabled = true,
+AutoFire = true,
+WallCheck = true,
+Priority = "Auto",
+MinDamage = 55,
+AutoStop = false,
+Killshot = true,
+HitChance = 100,
+ShotDelay = 0,
+AutoScoop = false,
+NoSpread = true,
+RapidFire = false,
+MaxPenetration = true,
+SilentAim = true,
+AntiAim = false,
+AA_Yaw = "Backwards",
+AA_Pitch = "Down",
+AA_Speed = 20,
+AutoPeek = false,
+AutoPeekKey = Enum.KeyCode.LeftAlt,
+AutoPeekMode = "Hold",
+AutoPeekActive = false
+},
+Misc = {
+Bhop = { Enabled = false, Key = Enum.KeyCode.Space, Speed = 15, Auto = false },
+Speed = { Enabled = false, Value = 25 },
+ThirdPerson = { Enabled = false, Key = Enum.KeyCode.V, Distance = 10, OffsetX = 0, OffsetY = 1.5 },
+ChatSpam = {
+Enabled = false,
+Message = "[Z] - KAAN Cheat — performance, precision, dominance."
+}
+}
+}
+local MenuKey = Enum.KeyCode.Insert
+local SpinbotSpeed = 20
+local espCache, bombCache = {}, {}
+local SharedEnemyCache = {} -- OTIMIZAÇÃO: Lista cacheada de inimigos vivos para loops rápidos
+local SpectatorState = {
+Enabled = false,
+FilterMode = "Aliados",
+Frame = nil,
+Content = nil,
+ListLayout = nil,
+Labels = {}
+}
+local AntiSpec = {
+Enabled = false,
+Mode = "Legit",
+RageWasEnabled = false,
+LegitWasEnabled = false,
+RapidFireWasEnabled = false,
+IsActive = false,
+LastSpecCount = 0
+}
+local AutoPeek = {
+Active = false,
+SavedCFrame = nil,
+Marker = nil
+}
+local fovCircle, lastTriggerTime = nil, 0
+local lastScopeToggleTime = 0
+local function getEquippedWeaponName()
+local char = LocalPlayer.Character
+if not char then return nil end
+local equippedToolVal = char:FindFirstChild("EquippedTool")
+if equippedToolVal and equippedToolVal:IsA("StringValue") then
+return equippedToolVal.Value
+end
+local tool = char:FindFirstChildOfClass("Tool")
+if tool then return tool.Name end
+return nil
+end
+local function isPlayerScoped()
+local camera = workspace.CurrentCamera
+if not camera then return false, "No Camera" end
+local fov = camera.FieldOfView
+if fov < 70 then return true, "FOV" end
+local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+if pGui and pGui:FindFirstChild("GUI") then
+local g = pGui.GUI
+if g:FindFirstChild("Crosshairs") and g.Crosshairs:FindFirstChild("Scope") then
+if g.Crosshairs.Scope.Visible then return true, "GUI (Scope)" end
+elseif g:FindFirstChild("ScopeFrame") then
+if g.ScopeFrame.Visible then return true, "GUI (Frame)" end
+end
+end
+return false, "None"
+end
+local function showNotification(message, duration)
+duration = duration or 3
+for _, child in ipairs(GuiInstances.NotificationGui:GetChildren()) do
+if child:IsA("Frame") then
+child:Destroy()
+end
+end
+local notificationFrame = Instance.new("Frame")
+notificationFrame.Size = UDim2.new(0, 300, 0, 60)
+notificationFrame.Position = UDim2.new(0.5, -150, 0.1, 0)
+notificationFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+notificationFrame.BackgroundTransparency = 0.2
+notificationFrame.BorderSizePixel = 0
+notificationFrame.ZIndex = 1000
+notificationFrame.Parent = GuiInstances.NotificationGui
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = notificationFrame
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(255, 255, 255)
+stroke.Thickness = 2
+stroke.Parent = notificationFrame
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(1, -20, 1, -20)
+textLabel.Position = UDim2.new(0, 10, 0, 10)
+textLabel.BackgroundTransparency = 1
+textLabel.Text = message
+textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+textLabel.TextSize = 16
+textLabel.Font = Enum.Font.GothamBold
+textLabel.TextWrapped = true
+textLabel.Parent = notificationFrame
+task.spawn(function()
+task.wait(duration)
+for i = 1, 10 do
+if notificationFrame and notificationFrame.Parent then
+notificationFrame.BackgroundTransparency = 0.2 + (i * 0.08)
+textLabel.TextTransparency = i * 0.1
+stroke.Transparency = i * 0.1
+task.wait(0.05)
+end
+end
+if notificationFrame and notificationFrame.Parent then
+notificationFrame:Destroy()
+end
+end)
+end
+local function sendChatMessage(msg)
+if not msg or msg == "" then return end
+local chatRemote = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents") and game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest")
+if chatRemote then
+chatRemote:FireServer(msg, "All")
+else
+local tcs = game:GetService("TextChatService")
+if tcs and tcs.ChatVersion == Enum.ChatVersion.TextChatService then
+local channel = tcs:FindFirstChild("TextChannels") and tcs.TextChannels:FindFirstChild("RBXGeneral")
+if channel then
+channel:SendAsync(msg)
+end
+end
+end
+end
+local function checkScopeState()
+local scoped, reason = isPlayerScoped()
+local fov = workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView or 0
+local toolName = getEquippedWeaponName() or "NONE"
+local char = LocalPlayer.Character
+local aimingVal = char and char:FindFirstChild("AIMING", true) -- true = recursive search
+local aimingState = "Not Found"
+if aimingVal then
+aimingState = tostring(aimingVal.Value) .. " (Parent: " .. aimingVal.Parent.Name .. ")"
+end
+local msg = string.format("🔭 SCOPE DEBUG\nFOV: %.1f\nScoped: %s\nReason: %s\nWeapon: %s\nAIMING Val: %s", fov, tostring(scoped), reason, toolName, tostring(aimingState))
+showNotification(msg, 3)
+print(msg)
+end
+local triggerAcquiredTime = 0
+local WeaponHacks = {
+clearKeys = {"Spread", "Accuracy", "Recoil", "MaxSpread", "Inaccuracy", "Bloom", "Kick", "MinSpread", "RecoilControl", "Recovery", "MovementSpread", "MoveSpread", "WalkSpread", "Penalty"},
+OriginalValues = setmetatable({}, {__mode = "k"}),
+CurrentToolCache = {},
+LastWeaponIdent = nil,
+CurrentToolDamage = 34,
+CurrentToolHeadMultiplier = 4
+}
+local SpreadCache, RapidFireCache = {}, {}
+local lastCacheUpdate = 0
+local DefaultWeaponStats = {
+["AK47"] = { ["Spread"] = 0.6, ["Recoil"] = 30 },
+["M4A4"] = { ["Spread"] = 0.6, ["Recoil"] = 23 },
+["M4A1"] = { ["Spread"] = 0.6, ["Recoil"] = 21 },
+["AWP"] = { ["Spread"] = 0, ["Recoil"] = 78 },
+["Glock"] = { ["Spread"] = 1.7, ["Recoil"] = 18 },
+["USP"] = { ["Spread"] = 1.9, ["Recoil"] = 29 },
+["DesertEagle"] = { ["Spread"] = 5.6, ["Recoil"] = 35 },
+["FiveSeven"] = { ["Spread"] = 2, ["Recoil"] = 25 },
+["P250"] = { ["Spread"] = 2, ["Recoil"] = 26 },
+["Tec9"] = { ["Spread"] = 2, ["Recoil"] = 23 },
+["DualBerettas"] = { ["Spread"] = 2, ["Recoil"] = 27 },
+["CZ"] = { ["Spread"] = 3, ["Recoil"] = 31 },
+["R8"] = { ["Spread"] = 5, ["Recoil"] = 20 },
+["P2000"] = { ["Spread"] = 1.9, ["Recoil"] = 29 },
+["Famas"] = { ["Spread"] = 0.6, ["Recoil"] = 20 },
+["Galil"] = { ["Spread"] = 0.6, ["Recoil"] = 21 },
+["AUG"] = { ["Spread"] = 0.5, ["Recoil"] = 24 },
+["SG"] = { ["Spread"] = 0.5, ["Recoil"] = 28 },
+["Scout"] = { ["Spread"] = 0.28, ["Recoil"] = 33 },
+["G3SG1"] = { ["Spread"] = 10, ["Recoil"] = 30 },
+["MAC10"] = { ["Spread"] = 0.6, ["Recoil"] = 18 },
+["P90"] = { ["Spread"] = 1, ["Recoil"] = 16 },
+["MP9"] = { ["Spread"] = 0.4, ["Recoil"] = 19 },
+["MP7"] = { ["Spread"] = 0.6, ["Recoil"] = 16 },
+["UMP"] = { ["Spread"] = 0.4, ["Recoil"] = 23 },
+["Bizon"] = { ["Spread"] = 1, ["Recoil"] = 18 },
+["M249"] = { ["Spread"] = 2, ["Recoil"] = 22 },
+["Negev"] = { ["Spread"] = 40, ["Recoil"] = 20 },
+["MAG7"] = { ["Spread"] = 85, ["Recoil"] = 82.5 },
+["XM"] = { ["Spread"] = 57, ["Recoil"] = 80 },
+["Nova"] = { ["Spread"] = 60, ["Recoil"] = 71.5 },
+["SawedOff"] = { ["Spread"] = 93, ["Recoil"] = 71.5 }
+}
+function WeaponHacks:clearStats(m, depth)
+if type(m) ~= "table" then return end
+depth = depth or 0
+if depth > 2 then return end
+for k, v in pairs(m) do
+if type(v) == "table" then
+self:clearStats(v, depth + 1)
+elseif type(v) == "number" then
+if type(k) == "string" then
+local lowK = k:lower()
+local isSafe = false
+if lowK:find("ammo") or lowK:find("clip") or lowK:find("damage") or lowK:find("range") or lowK:find("dist") or lowK:find("rate") then
+isSafe = true
+elseif lowK:find("speed") and (lowK:find("walk") or lowK:find("run") or lowK:find("move") or lowK:find("equip") or lowK:find("reload") or lowK:find("projectile") or lowK:find("muzzle")) then
+isSafe = true
+elseif lowK:find("power") and (lowK:find("jump") or lowK:find("throw")) then
+isSafe = true
+end
+if not isSafe then
+if lowK:find("spread") or lowK:find("recoil") or lowK:find("inaccuracy") or lowK:find("penalty") or lowK:find("bloom") or lowK:find("sway") or lowK:find("kick") or lowK:find("shake") or lowK:find("velocity") then
+m[k] = 0
+elseif lowK:find("jump") or lowK:find("move") or lowK:find("walk") or lowK:find("run") or lowK:find("crouch") or lowK:find("air") or lowK:find("land") or lowK:find("err") then
+m[k] = 0
+elseif lowK:find("deviation") or lowK:find("offset") or lowK:find("factor") or lowK:find("scale") or lowK:find("ratio") then
+m[k] = 0
+end
+end
+end
+end
+end
+if m.Range then m.Range = 99999 end
+end
+function WeaponHacks:getActiveWeapon()
+local char = LocalPlayer.Character
+if not char then return nil, nil end
+local activeTool = char:FindFirstChildOfClass("Tool")
+local weaponName = activeTool and activeTool.Name
+local equippedVal = char:FindFirstChild("EquippedTool")
+if equippedVal and equippedVal:IsA("StringValue") and equippedVal.Value ~= "" then
+weaponName = equippedVal.Value
+if not activeTool then
+activeTool = char:FindFirstChild(weaponName)
+end
+end
+local rsWeapons = game:GetService("ReplicatedStorage"):FindFirstChild("Weapons")
+local prototype = rsWeapons and rsWeapons:FindFirstChild(weaponName or "")
+return activeTool, prototype
+end
+function WeaponHacks:updateCache()
+local currentTime = tick()
+if (currentTime - lastCacheUpdate) < 5 and #SpreadCache > 0 then return end
+lastCacheUpdate = currentTime
+SpreadCache = {}
+RapidFireCache = {}
+local weaponsFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Weapons")
+if weaponsFolder then
+for _, obj in ipairs(weaponsFolder:GetDescendants()) do
+if obj:IsA("NumberValue") or obj:IsA("IntValue") or obj:IsA("DoubleConst") then
+local name = obj.Name:lower()
+if name:find("spread") or name:find("recoil") or name:find("penalty") or name:find("recover") or
+name:find("kick") or name:find("inaccuracy") or name:find("bloom") or name:find("sway") or
+name:find("move") or name:find("jump") or name:find("land") or name:find("stand") or
+name:find("crouch") or name:find("ladder") then
+table.insert(SpreadCache, obj)
+end
+if name:find("firerate") or name:find("reload") or name:find("recovery") or name:find("equip") or name:find("apply") then
+table.insert(RapidFireCache, obj)
+end
+if name == "penetration" then
+table.insert(SpreadCache, obj)
+end
+end
+end
+end
+end
+function WeaponHacks:scanCurrentTool(tool, prototype)
+table.clear(self.CurrentToolCache)
+self.LastTool = tool
+local sources = {}
+if tool then table.insert(sources, tool) end
+if prototype then table.insert(sources, prototype) end
+for _, source in ipairs(sources) do
+for _, child in ipairs(source:GetDescendants()) do
+if child:IsA("NumberValue") or child:IsA("IntValue") then
+local name = child.Name:lower()
+if name:find("spread") or name:find("recoil") or name:find("penalty") or name:find("recover") or
+name:find("kick") or name:find("inaccuracy") or name:find("bloom") or name:find("sway") or
+name:find("move") or name:find("jump") or name:find("land") or name:find("stand") or
+name:find("camera") or name:find("shake") or name:find("fire") or
+name:find("crouch") or name:find("ladder") or name:find("crouched") or
+name:find("firerate") or name:find("reload") or name:find("equip") or name:find("apply") or
+name:find("armorpenetration") or name:find("rangemodifier") or
+name == "penetration" or name == "dmg" or name == "damage" then
+local original = self.OriginalValues[child] or child.Value
+self.OriginalValues[child] = original
+local target = 0
+if name:find("firerate") or name:find("reload") or name:find("equip") or name:find("apply") or name:find("recovery") then
+target = 0.02
+elseif name == "penetration" or name == "dmg" or name == "damage" then
+target = 1000
+elseif name:find("armorpenetration") or name:find("rangemodifier") then
+target = 100
+end
+if name == "dmg" or name == "damage" then
+self.CurrentToolDamage = original
+elseif name:find("headshotmultiplier") or name:find("headmult") then
+self.CurrentToolHeadMultiplier = original
+end
+table.insert(self.CurrentToolCache, {Object = child, Original = original, Target = target})
+if name == "penetration" then
+currentWeaponPenetration = (KAAN.Rage.Enabled and KAAN.Rage.MaxPenetration) and 1000 or original
+end
+end
+end
+end
+end
+end
+function WeaponHacks:setupEvents()
+local function onCheck()
+local tool, prototype = self:getActiveWeapon()
+if tool or prototype then
+local weaponIdent = (tool and tool:GetFullName()) or (prototype and prototype:GetFullName())
+if weaponIdent ~= self.LastWeaponIdent then
+self.LastWeaponIdent = weaponIdent
+self:scanCurrentTool(tool, prototype)
+if not KAAN.Rage.Enabled then
+local name = (tool and tool.Name) or (prototype and prototype.Name) or ""
+local isSniper = name:find("AWP") or name:find("Scout") or name:find("G3SG1") or name:find("SCAR20") or name:find("SG") or name:find("AUG")
+if isSniper then
+KAAN.Aim.FOV = 1
+else
+KAAN.Aim.FOV = KAAN.Aim.BaseFOV
+end
+end
+end
+else
+self.LastWeaponIdent = nil
+table.clear(self.CurrentToolCache)
+if not KAAN.Rage.Enabled then
+KAAN.Aim.FOV = KAAN.Aim.BaseFOV
+end
+end
+end
+local function onCharAdded(char)
+self.LastWeaponIdent = nil
+table.clear(self.CurrentToolCache)
+char.ChildAdded:Connect(function(child)
+if child:IsA("Tool") then onCheck() end
+end)
+char.ChildRemoved:Connect(function(child)
+if child:IsA("Tool") then onCheck() end
+end)
+task.spawn(function()
+local eq = char:WaitForChild("EquippedTool", 3)
+if eq and eq:IsA("StringValue") then
+eq.Changed:Connect(onCheck)
+end
+onCheck()
+end)
+end
+if LocalPlayer.Character then onCharAdded(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(onCharAdded)
+end
+function WeaponHacks:onStep()
+if #self.CurrentToolCache == 0 then return end
+self:applyNoSpread()
+self:applyRapidFire()
+self:applyRecoilControl()
+self:applyMaxPenetration()
+end
+function WeaponHacks:applyNoSpread()
+local enabled = KAAN.Rage.Enabled and KAAN.Rage.NoSpread
+local rapidEnabled = KAAN.Rage.Enabled and KAAN.Rage.RapidFire
+local legitEnabled = KAAN.Aim.NoRecoil
+for _, data in ipairs(self.CurrentToolCache) do
+local child = data.Object
+local name = child.Name:lower()
+local original = data.Original
+local target = data.Target
+if name == "penetration" or name:find("armorpenetration") or name == "dmg" or name == "damage" then
+else
+local isRapid = (target > 0)
+local shouldApply = (isRapid and rapidEnabled) or (not isRapid and enabled)
+if shouldApply then
+if math.abs(child.Value - target) > 1e-6 then
+child.Value = target
+end
+else
+local isRecoil = name:find("recoil") or name:find("kick") or name:find("camera") or name:find("shake") or (name:find("fire") and not name:find("rate"))
+if not (legitEnabled and isRecoil) then
+if math.abs(child.Value - original) > 0.001 then
+child.Value = original
+end
+end
+end
+end
+end
+end
+function WeaponHacks:applyRapidFire()
+local enabled = KAAN.Rage.Enabled and KAAN.Rage.RapidFire
+for _, data in ipairs(self.CurrentToolCache) do
+local child = data.Object
+local original = data.Original
+local target = data.Target
+if target > 0 and child.Name ~= "Penetration" and not child.Name:find("ArmorPenetration") then
+if enabled then
+if math.abs(child.Value - target) > 1e-6 then child.Value = target end
+end
+end
+end
+end
+function WeaponHacks:applyMaxPenetration()
+local enabled = KAAN.Rage.Enabled and KAAN.Rage.MaxPenetration
+if enabled then currentWeaponPenetration = 1000 end
+for _, data in ipairs(self.CurrentToolCache) do
+local child = data.Object
+local name = child.Name:lower()
+if name == "penetration" or name:find("armorpenetration") or name:find("rangemodifier") or name == "dmg" or name == "damage" then
+local original = data.Original
+local target = 1000
+if name:find("armorpenetration") or name:find("rangemodifier") then target = 100 end
+if enabled then if child.Value ~= target then child.Value = target end
+else if math.abs(child.Value - original) > 0.001 then child.Value = original end end
+end
+end
+end
+function WeaponHacks:applyRecoilControl()
+if KAAN.Rage.Enabled and KAAN.Rage.NoSpread then return end
+local enabled = KAAN.Aim.NoRecoil
+local intensity = KAAN.Aim.RecoilControl
+local reductionFactor = 1 - (intensity / 10)
+for _, data in ipairs(self.CurrentToolCache) do
+local child = data.Object
+local name = child.Name:lower()
+local original = data.Original
+if name:find("recoil") or name:find("kick") or name:find("camera") or name:find("shake") or (name:find("fire") and not name:find("rate") and not name:find("delay")) then
+if enabled then
+local target = original * reductionFactor
+if child:IsA("IntValue") then target = math.floor(target + 0.5) end
+if math.abs(child.Value - target) > 0.001 then child.Value = target end
+end
+end
+end
+end
+local currentTargetForPart, currentTargetPart = nil, nil
+local spaceHeld, autoScoopActive, autoScoopActivatedTime = false, false, 0
+local finalCFrame = CFrame.new()
+local COLOR_ENEMY = Color3.fromRGB(255, 0, 0)
+local COLOR_TEAM = Color3.fromRGB(0, 255, 0)
+local COLOR_BOMB = Color3.fromRGB(255, 165, 0)
+local VIM = game:GetService("VirtualInputManager")
+local Stats = game:GetService("Stats")
+local lastKeybindCaptureTime = 0
+local GuiInstances = {
+ScreenGui = Instance.new("ScreenGui"),
+FOVGui = Instance.new("ScreenGui"),
+NotificationGui = Instance.new("ScreenGui"),
+HotkeysGui = Instance.new("ScreenGui"),
+HotkeysOverlayEnabled = true
+}
+GuiInstances.ScreenGui.Name = "KAAN_CC"
+GuiInstances.ScreenGui.ResetOnSpawn = false
+GuiInstances.ScreenGui.Enabled = true
+GuiInstances.ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+GuiInstances.FOVGui.Name = "FOVCircleGui"
+GuiInstances.FOVGui.ResetOnSpawn = false
+GuiInstances.FOVGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+GuiInstances.FOVGui.Enabled = true
+GuiInstances.FOVGui.IgnoreGuiInset = true
+GuiInstances.NotificationGui.Name = "NotificationGui"
+GuiInstances.NotificationGui.ResetOnSpawn = false
+GuiInstances.NotificationGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+GuiInstances.HotkeysGui.Name = "HotkeysOverlay"
+GuiInstances.HotkeysGui.ResetOnSpawn = false
+GuiInstances.HotkeysGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local HotkeysFrame = Instance.new("Frame")
+HotkeysFrame.Name = "HotkeysContainer"
+HotkeysFrame.Size = UDim2.new(0, 150, 0, 200)
+HotkeysFrame.Position = UDim2.new(0, 10, 0.5, -100)
+HotkeysFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+HotkeysFrame.BackgroundTransparency = 0.3
+HotkeysFrame.BorderSizePixel = 0
+HotkeysFrame.Parent = GuiInstances.HotkeysGui
+local HotkeysCorner = Instance.new("UICorner")
+HotkeysCorner.CornerRadius = UDim.new(0, 8)
+HotkeysCorner.Parent = HotkeysFrame
+local HotkeysStroke = Instance.new("UIStroke")
+HotkeysStroke.Color = Color3.fromRGB(138, 43, 226)
+HotkeysStroke.Thickness = 1
+HotkeysStroke.Transparency = 0.5
+HotkeysStroke.Parent = HotkeysFrame
+local HotkeysTitle = Instance.new("TextLabel")
+HotkeysTitle.Size = UDim2.new(1, 0, 0, 25)
+HotkeysTitle.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+HotkeysTitle.BackgroundTransparency = 0.5
+HotkeysTitle.Text = "⚡ ACTIVE"
+HotkeysTitle.TextColor3 = Color3.new(1, 1, 1)
+HotkeysTitle.TextSize = 12
+HotkeysTitle.Font = Enum.Font.GothamBold
+HotkeysTitle.Parent = HotkeysFrame
+local HotkeysTitleCorner = Instance.new("UICorner")
+HotkeysTitleCorner.CornerRadius = UDim.new(0, 8)
+HotkeysTitleCorner.Parent = HotkeysTitle
+local HotkeysContent = Instance.new("Frame")
+HotkeysContent.Size = UDim2.new(1, -10, 1, -30)
+HotkeysContent.Position = UDim2.new(0, 5, 0, 28)
+HotkeysContent.BackgroundTransparency = 1
+HotkeysContent.Parent = HotkeysFrame
+local HotkeysLayout = Instance.new("UIListLayout")
+HotkeysLayout.Padding = UDim.new(0, 3)
+HotkeysLayout.SortOrder = Enum.SortOrder.LayoutOrder
+HotkeysLayout.Parent = HotkeysContent
+local hotkeyLabels = {}
+local function createHotkeyLine(name, order)
+local line = Instance.new("Frame")
+line.Size = UDim2.new(1, 0, 0, 18)
+line.BackgroundTransparency = 1
+line.LayoutOrder = order
+line.Parent = HotkeysContent
+local indicator = Instance.new("Frame")
+indicator.Size = UDim2.new(0, 8, 0, 8)
+indicator.Position = UDim2.new(0, 0, 0.5, -4)
+indicator.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+indicator.Parent = line
+local indicatorCorner = Instance.new("UICorner")
+indicatorCorner.CornerRadius = UDim.new(1, 0)
+indicatorCorner.Parent = indicator
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -15, 1, 0)
+label.Position = UDim2.new(0, 15, 0, 0)
+label.BackgroundTransparency = 1
+label.Text = name
+label.TextColor3 = Color3.fromRGB(150, 150, 150)
+label.TextSize = 11
+label.Font = Enum.Font.Gotham
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = line
+hotkeyLabels[name] = {Line = line, Indicator = indicator, Label = label, Active = false}
+return hotkeyLabels[name]
+end
+createHotkeyLine("Ragebot", 1)
+createHotkeyLine("Trigger", 2)
+createHotkeyLine("AutoScope", 3)
+createHotkeyLine("ThirdPerson", 4)
+createHotkeyLine("AntiSpec", 5)
+createHotkeyLine("Killshot", 6)
+createHotkeyLine("NoSpread", 7)
+createHotkeyLine("RapidFire", 8)
+createHotkeyLine("AutoPeek", 9)
+local function updateHotkeysOverlay()
+if not GuiInstances.HotkeysOverlayEnabled then
+GuiInstances.HotkeysGui.Enabled = false
+return
+end
+local visibleCount = 0
+local function checkState(name)
+if name == "ESP" then return KAAN.ESP.Enabled
+elseif name == "Aimbot" then return KAAN.Aim.Enabled and KAAN.Aim.Active
+elseif name == "Trigger" then return not KAAN.Rage.Enabled and KAAN.Trigger.Enabled and KAAN.Trigger.Active
+elseif name == "Ragebot" then return KAAN.Rage.Enabled
+elseif name == "AutoFire" then return KAAN.Rage.Enabled and KAAN.Rage.AutoFire
+elseif name == "Wallbang" then return KAAN.Rage.Enabled and KAAN.Rage.WallCheck
+elseif name == "AutoStop" then return KAAN.Rage.Enabled and KAAN.Rage.AutoStop
+elseif name == "AutoScope" then return KAAN.Rage.Enabled and KAAN.Rage.AutoScoop
+elseif name == "ThirdPerson" then return KAAN.Misc.ThirdPerson.Enabled
+elseif name == "Bhop" then return KAAN.Misc.Bhop.Enabled
+elseif name == "AntiAim" then return KAAN.Rage.AntiAim
+elseif name == "AntiSpec" then return AntiSpec.Enabled
+elseif name == "Killshot" then return KAAN.Rage.Enabled and KAAN.Rage.Killshot
+elseif name == "NoSpread" then return KAAN.Rage.Enabled and KAAN.Rage.NoSpread
+elseif name == "RapidFire" then return KAAN.Rage.Enabled and KAAN.Rage.RapidFire
+elseif name == "AutoPeek" then return KAAN.Rage.Enabled and KAAN.Rage.AutoPeek and AutoPeek.Active
+end
+return false
+end
+for name, data in pairs(hotkeyLabels) do
+local isActive = checkState(name)
+if isActive then
+data.Line.Visible = true
+if name == "AntiSpec" then
+if AntiSpec.IsActive then
+data.Label.Text = "AntiSpec [ATIVO]"
+data.Label.TextColor3 = Color3.fromRGB(255, 100, 100)
+data.Indicator.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+else
+data.Label.Text = "AntiSpec [" .. AntiSpec.Mode .. "]"
+data.Label.TextColor3 = Color3.new(1, 1, 1)
+data.Indicator.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+end
+else
+data.Indicator.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+data.Label.TextColor3 = Color3.new(1, 1, 1)
+end
+visibleCount = visibleCount + 1
+else
+data.Line.Visible = false
+end
+end
+if visibleCount == 0 then
+GuiInstances.HotkeysGui.Enabled = false
+else
+GuiInstances.HotkeysGui.Enabled = true
+HotkeysFrame.Size = UDim2.new(0, 150, 0, 30 + (visibleCount * 21))
+end
+end
+task.spawn(function()
+task.wait(0.5)
+updateHotkeysOverlay()
+while true do
+updateHotkeysOverlay()
+task.wait(0.2)
+end
+end)
+local function createOrUpdateFOVCircle()
+if fovCircle and fovCircle.Parent then
+fovCircle:Destroy()
+fovCircle = nil
+end
+if not KAAN.Aim.ShowFOV then
+GuiInstances.FOVGui.Enabled = false
+return
+end
+GuiInstances.FOVGui.Enabled = true
+fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOVCircle"
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Size = UDim2.new(0, KAAN.Aim.FOV * 2, 0, KAAN.Aim.FOV * 2)
+fovCircle.Position = UDim2.new(0.5, KAAN.Visuals.Crosshair.X, 0.5, KAAN.Visuals.Crosshair.Y)
+fovCircle.BackgroundTransparency = 1
+fovCircle.BorderSizePixel = 0
+fovCircle.ZIndex = 1000
+fovCircle.Parent = GuiInstances.FOVGui
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = fovCircle
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(255, 0, 0)
+stroke.Thickness = 2
+stroke.Parent = fovCircle
+end
+createOrUpdateFOVCircle()
+local ThemeColors = {
+Background = Color3.fromRGB(15, 15, 20),
+Secondary = Color3.fromRGB(22, 22, 30),
+Accent = Color3.fromRGB(138, 43, 226),
+AccentSecondary = Color3.fromRGB(75, 0, 130),
+AccentBlue = Color3.fromRGB(0, 150, 255),
+Text = Color3.fromRGB(255, 255, 255),
+TextDim = Color3.fromRGB(180, 180, 180),
+Success = Color3.fromRGB(0, 200, 100),
+Danger = Color3.fromRGB(255, 60, 60),
+Warning = Color3.fromRGB(255, 165, 0),
+Border = Color3.fromRGB(60, 60, 80),
+Hover = Color3.fromRGB(35, 35, 50)
+}
+local Frame = Instance.new("Frame")
+Frame.Name = "MainContainer"
+Frame.Size = UDim2.new(0, 550, 0, 500)
+Frame.Position = UDim2.new(0.5, -275, 0.5, -250)
+Frame.BackgroundColor3 = ThemeColors.Background
+Frame.BorderSizePixel = 0
+Frame.BackgroundTransparency = 0.02
+Frame.Visible = false
+Frame.Parent = GuiInstances.ScreenGui
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = Frame
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = ThemeColors.Accent
+MainStroke.Thickness = 1.5
+MainStroke.Transparency = 0.3
+MainStroke.Parent = Frame
+local MobileToggle = Instance.new("TextButton")
+MobileToggle.Name = "MobileToggle"
+MobileToggle.Size = UDim2.new(0, 50, 0, 50)
+MobileToggle.Position = UDim2.new(0.9, -60, 0.8, -60) -- Default: Bottom Right
+MobileToggle.BackgroundColor3 = ThemeColors.Accent
+MobileToggle.Text = ""
+MobileToggle.AutoButtonColor = false
+MobileToggle.Parent = GuiInstances.ScreenGui
+local MobileToggleCorner = Instance.new("UICorner")
+MobileToggleCorner.CornerRadius = UDim.new(1, 0) -- Circle
+MobileToggleCorner.Parent = MobileToggle
+local MobileToggleGradient = Instance.new("UIGradient")
+MobileToggleGradient.Color = ColorSequence.new({
+ColorSequenceKeypoint.new(0, ThemeColors.Accent),
+ColorSequenceKeypoint.new(1, ThemeColors.AccentBlue)
+})
+MobileToggleGradient.Rotation = 45
+MobileToggleGradient.Parent = MobileToggle
+local MobileToggleStroke = Instance.new("UIStroke")
+MobileToggleStroke.Color = Color3.new(1, 1, 1)
+MobileToggleStroke.Thickness = 1.5
+MobileToggleStroke.Transparency = 0.5
+MobileToggleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+MobileToggleStroke.Parent = MobileToggle
+local MobileGlow = Instance.new("ImageLabel")
+MobileGlow.Name = "Glow"
+MobileGlow.Size = UDim2.new(1, 30, 1, 30)
+MobileGlow.Position = UDim2.new(0.5, 0, 0.5, 0)
+MobileGlow.AnchorPoint = Vector2.new(0.5, 0.5)
+MobileGlow.BackgroundTransparency = 1
+MobileGlow.Image = "rbxassetid://1316045217" -- Soft Glow asset
+MobileGlow.ImageColor3 = ThemeColors.Accent
+MobileGlow.ImageTransparency = 0.6
+MobileGlow.ZIndex = -1
+MobileGlow.Parent = MobileToggle
+local MobileIcon = Instance.new("TextLabel")
+MobileIcon.Name = "Icon"
+MobileIcon.Size = UDim2.new(1, 0, 1, 0)
+MobileIcon.BackgroundTransparency = 1
+MobileIcon.Text = "Z"
+MobileIcon.TextColor3 = Color3.new(1, 1, 1)
+MobileIcon.TextSize = 26
+MobileIcon.Font = Enum.Font.GothamBlack
+MobileIcon.Parent = MobileToggle
+local draggingToggle = false
+local dragInputToggle, dragStartToggle, startPosToggle
+local TS = game:GetService("TweenService")
+MobileToggle.InputBegan:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+draggingToggle = true
+dragStartToggle = input.Position
+startPosToggle = MobileToggle.Position
+TS:Create(MobileToggle, TweenInfo.new(0.1), {Size = UDim2.new(0, 45, 0, 45)}):Play()
+input.Changed:Connect(function()
+if input.UserInputState == Enum.UserInputState.End then
+draggingToggle = false
+TS:Create(MobileToggle, TweenInfo.new(0.2, Enum.EasingStyle.Back), {Size = UDim2.new(0, 50, 0, 50)}):Play()
+end
+end)
+end
+end)
+MobileToggle.InputChanged:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+dragInputToggle = input
+end
+end)
+UserInputService.InputChanged:Connect(function(input)
+if input == dragInputToggle and draggingToggle then
+local delta = input.Position - dragStartToggle
+MobileToggle.Position = UDim2.new(startPosToggle.X.Scale, startPosToggle.X.Offset + delta.X, startPosToggle.Y.Scale, startPosToggle.Y.Offset + delta.Y)
+end
+end)
+MobileToggle.MouseButton1Click:Connect(function()
+if dragStartToggle and dragInputToggle and (dragInputToggle.Position - dragStartToggle).Magnitude > 5 then return end
+Frame.Visible = not Frame.Visible
+end)
+local Shadow = Instance.new("ImageLabel")
+Shadow.Name = "Shadow"
+Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+Shadow.BackgroundTransparency = 1
+Shadow.Position = UDim2.new(0.5, 0, 0.5, 4)
+Shadow.Size = UDim2.new(1, 30, 1, 30)
+Shadow.ZIndex = -1
+Shadow.Image = "rbxassetid://5554236805"
+Shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+Shadow.ImageTransparency = 0.5
+Shadow.ScaleType = Enum.ScaleType.Slice
+Shadow.SliceCenter = Rect.new(23, 23, 277, 277)
+Shadow.Parent = Frame
+local Glow = Instance.new("ImageLabel")
+Glow.Name = "Glow"
+Glow.Size = UDim2.new(1, 60, 1, 60)
+Glow.Position = UDim2.new(0.5, 0, 0.5, 0)
+Glow.AnchorPoint = Vector2.new(0.5, 0.5)
+Glow.BackgroundTransparency = 1
+Glow.Image = "rbxassetid://1316045217"
+Glow.ImageColor3 = ThemeColors.Accent
+Glow.ImageTransparency = 0.5
+Glow.ZIndex = -2
+Glow.Parent = Frame
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundColor3 = ThemeColors.Secondary
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = Frame
+local TitleBarCorner = Instance.new("UICorner")
+TitleBarCorner.CornerRadius = UDim.new(0, 12)
+TitleBarCorner.Parent = TitleBar
+local TitleBarFix = Instance.new("Frame")
+TitleBarFix.Size = UDim2.new(1, 0, 0, 15)
+TitleBarFix.Position = UDim2.new(0, 0, 1, -15)
+TitleBarFix.BackgroundColor3 = ThemeColors.Secondary
+TitleBarFix.BorderSizePixel = 0
+TitleBarFix.Parent = TitleBar
+local TitleGradient = Instance.new("UIGradient")
+TitleGradient.Color = ColorSequence.new({
+ColorSequenceKeypoint.new(0, ThemeColors.Accent),
+ColorSequenceKeypoint.new(0.5, ThemeColors.AccentSecondary),
+ColorSequenceKeypoint.new(1, ThemeColors.AccentBlue)
+})
+TitleGradient.Rotation = 90
+TitleGradient.Parent = TitleBar
+local Logo = Instance.new("TextLabel")
+Logo.Name = "Logo"
+Logo.Size = UDim2.new(0, 30, 0, 30)
+Logo.Position = UDim2.new(0, 8, 0.5, -15)
+Logo.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Logo.BackgroundTransparency = 0.5
+Logo.Text = "⚡"
+Logo.TextColor3 = ThemeColors.Text
+Logo.TextSize = 16
+Logo.Font = Enum.Font.GothamBold
+Logo.Parent = TitleBar
+local LogoCorner = Instance.new("UICorner")
+LogoCorner.CornerRadius = UDim.new(0, 8)
+LogoCorner.Parent = Logo
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Text = "KAAN.CC"
+Title.Size = UDim2.new(0, 150, 0, 30) -- Matches Logo height
+Title.Position = UDim2.new(0, 45, 0.5, -15) -- Vertically centered
+Title.BackgroundTransparency = 1
+Title.TextColor3 = ThemeColors.Text
+Title.TextSize = 15 -- Increased slightly
+Title.Font = Enum.Font.GothamBlack
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TitleBar
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Name = "Subtitle"
+Subtitle.Text = "v1.0"
+Subtitle.Size = UDim2.new(0, 50, 0, 15)
+Subtitle.Position = UDim2.new(1, -60, 0.5, -7)
+Subtitle.BackgroundTransparency = 1
+Subtitle.TextColor3 = ThemeColors.TextDim
+Subtitle.TextSize = 10
+Subtitle.Font = Enum.Font.Gotham
+Subtitle.TextXAlignment = Enum.TextXAlignment.Right
+Subtitle.Parent = TitleBar
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+local function updateDrag(input)
+local delta = input.Position - dragStart
+Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+TitleBar.InputBegan:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+dragging = true
+dragStart = input.Position
+startPos = Frame.Position
+input.Changed:Connect(function()
+if input.UserInputState == Enum.UserInputState.End then
+dragging = false
+end
+end)
+end
+end)
+TitleBar.InputChanged:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+dragInput = input
+end
+end)
+UserInputService.InputChanged:Connect(function(input)
+if input == dragInput and dragging then
+updateDrag(input)
+end
+end)
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 50, 1, -45)
+Sidebar.Position = UDim2.new(0, 0, 0, 40)
+Sidebar.BackgroundColor3 = ThemeColors.Secondary
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = Frame
+local SidebarCorner = Instance.new("UICorner")
+SidebarCorner.CornerRadius = UDim.new(0, 12)
+SidebarCorner.Parent = Sidebar
+local SidebarFix = Instance.new("Frame")
+SidebarFix.Size = UDim2.new(1, 0, 0, 15)
+SidebarFix.Position = UDim2.new(0, 0, 0, 0)
+SidebarFix.BackgroundColor3 = ThemeColors.Secondary
+SidebarFix.BorderSizePixel = 0
+SidebarFix.Parent = Sidebar
+local SidebarFixRight = Instance.new("Frame")
+SidebarFixRight.Size = UDim2.new(0, 15, 1, 0)
+SidebarFixRight.Position = UDim2.new(1, -15, 0, 0)
+SidebarFixRight.BackgroundColor3 = ThemeColors.Secondary
+SidebarFixRight.BorderSizePixel = 0
+SidebarFixRight.Parent = Sidebar
+local TabsContainer = Instance.new("Frame")
+TabsContainer.Name = "Tabs"
+TabsContainer.Size = UDim2.new(1, 0, 1, -10)
+TabsContainer.Position = UDim2.new(0, 0, 0, 5)
+TabsContainer.BackgroundTransparency = 1
+TabsContainer.Parent = Sidebar
+local TabsLayout = Instance.new("UIListLayout")
+TabsLayout.Padding = UDim.new(0, 4)
+TabsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+TabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabsLayout.Parent = TabsContainer
+local ContentArea = Instance.new("Frame")
+ContentArea.Name = "ContentArea"
+ContentArea.Size = UDim2.new(1, -58, 1, -48)
+ContentArea.Position = UDim2.new(0, 54, 0, 44)
+ContentArea.BackgroundColor3 = ThemeColors.Background
+ContentArea.BackgroundTransparency = 0.5
+ContentArea.BorderSizePixel = 0
+ContentArea.Parent = Frame
+local ContentAreaCorner = Instance.new("UICorner")
+ContentAreaCorner.CornerRadius = UDim.new(0, 8)
+ContentAreaCorner.Parent = ContentArea
+local TabPages = {}
+local CurrentTab = nil
+local function createTab(icon, name, order)
+local tabButton = Instance.new("TextButton")
+tabButton.Name = name
+tabButton.Size = UDim2.new(0, 40, 0, 40)
+tabButton.BackgroundColor3 = ThemeColors.Background
+tabButton.BackgroundTransparency = 1
+tabButton.Text = icon
+tabButton.TextColor3 = ThemeColors.TextDim
+tabButton.TextSize = 18
+tabButton.Font = Enum.Font.GothamBold
+tabButton.LayoutOrder = order
+tabButton.Parent = TabsContainer
+local tabCorner = Instance.new("UICorner")
+tabCorner.CornerRadius = UDim.new(0, 8)
+tabCorner.Parent = tabButton
+local activeIndicator = Instance.new("Frame")
+activeIndicator.Name = "Indicator"
+activeIndicator.Size = UDim2.new(0, 3, 0.6, 0)
+activeIndicator.Position = UDim2.new(0, 0, 0.2, 0)
+activeIndicator.BackgroundColor3 = ThemeColors.Accent
+activeIndicator.BorderSizePixel = 0
+activeIndicator.Visible = false
+activeIndicator.Parent = tabButton
+local indicatorCorner = Instance.new("UICorner")
+indicatorCorner.CornerRadius = UDim.new(0, 2)
+indicatorCorner.Parent = activeIndicator
+local page = Instance.new("ScrollingFrame")
+page.Name = name .. "Page"
+page.Size = UDim2.new(1, -10, 1, -10)
+page.Position = UDim2.new(0, 5, 0, 5)
+page.BackgroundTransparency = 1
+page.BorderSizePixel = 0
+page.ScrollBarThickness = 2
+page.ScrollBarImageColor3 = ThemeColors.Accent
+page.CanvasSize = UDim2.new(0, 0, 0, 0)
+page.Visible = false
+page.Parent = ContentArea
+local columnContainer = Instance.new("Frame")
+columnContainer.Name = "ColumnContainer"
+columnContainer.Size = UDim2.new(1, 0, 1, 0)
+columnContainer.BackgroundTransparency = 1
+columnContainer.Parent = page
+local colLayout = Instance.new("UIListLayout")
+colLayout.FillDirection = Enum.FillDirection.Horizontal
+colLayout.Padding = UDim.new(0, 8)
+colLayout.SortOrder = Enum.SortOrder.LayoutOrder
+colLayout.Parent = columnContainer
+local function createColumn(colName)
+local col = Instance.new("Frame")
+col.Name = colName
+col.Size = UDim2.new(0.5, -4, 0, 0)
+col.BackgroundTransparency = 1
+col.Parent = columnContainer
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 8)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = col
+layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+col.Size = UDim2.new(0.5, -4, 0, layout.AbsoluteContentSize.Y)
+local h1 = columnContainer:FindFirstChild("LeftColumn") and columnContainer.LeftColumn.UIListLayout.AbsoluteContentSize.Y or 0
+local h2 = columnContainer:FindFirstChild("RightColumn") and columnContainer.RightColumn.UIListLayout.AbsoluteContentSize.Y or 0
+page.CanvasSize = UDim2.new(0, 0, 0, math.max(h1, h2) + 20)
+end)
+return col
+end
+local leftCol = createColumn("LeftColumn")
+local rightCol = createColumn("RightColumn")
+TabPages[name] = {
+Button = tabButton,
+Page = page,
+Left = leftCol,
+Right = rightCol,
+Indicator = activeIndicator
+}
+tabButton.MouseEnter:Connect(function()
+if CurrentTab ~= name then tabButton.BackgroundTransparency = 0.5 end
+end)
+tabButton.MouseLeave:Connect(function()
+if CurrentTab ~= name then tabButton.BackgroundTransparency = 1 end
+end)
+tabButton.MouseButton1Click:Connect(function()
+if CurrentTab and TabPages[CurrentTab] then
+TabPages[CurrentTab].Button.BackgroundTransparency = 1
+TabPages[CurrentTab].Button.TextColor3 = ThemeColors.TextDim
+TabPages[CurrentTab].Indicator.Visible = false
+TabPages[CurrentTab].Page.Visible = false
+end
+CurrentTab = name
+tabButton.BackgroundTransparency = 0.3
+tabButton.TextColor3 = ThemeColors.Text
+activeIndicator.Visible = true
+page.Visible = true
+end)
+return page, leftCol, rightCol
+end
+local espPage, espLeft, espRight = createTab("👁", "ESP", 1)
+local aimPage, aimLeft, aimRight = createTab("🎯", "Aim", 2)
+local visualsPage, visLeft, visRight = createTab("🎨", "Visuals", 3)
+local triggerPage, triggerLeft, triggerRight = createTab("🔫", "Trigger", 4)
+local ragePage, rageLeft, rageRight = createTab("👹", "Rage", 5)
+local miscPage, miscLeft, miscRight = createTab("⚙", "Misc", 6)
+local keysPage, keysLeft, keysRight = createTab("⌨", "Keys", 7)
+TabPages["ESP"].Button.BackgroundTransparency = 0.3
+TabPages["ESP"].Button.TextColor3 = ThemeColors.Text
+TabPages["ESP"].Indicator.Visible = true
+TabPages["ESP"].Page.Visible = true
+CurrentTab = "ESP"
+local ContentContainer = espPage
+local ContentLayout = espLayout
+local function createSection(title, container)
+container = container or ContentContainer
+local section = Instance.new("Frame")
+section.Size = UDim2.new(1, 0, 0, 28)
+section.BackgroundColor3 = ThemeColors.Secondary
+section.BorderSizePixel = 0
+section.Parent = container
+local sectionCorner = Instance.new("UICorner")
+sectionCorner.CornerRadius = UDim.new(0, 6)
+sectionCorner.Parent = section
+local accentBar = Instance.new("Frame")
+accentBar.Size = UDim2.new(0, 3, 0.6, 0)
+accentBar.Position = UDim2.new(0, 6, 0.2, 0)
+accentBar.BackgroundColor3 = ThemeColors.Accent
+accentBar.BorderSizePixel = 0
+accentBar.Parent = section
+local accentCorner = Instance.new("UICorner")
+accentCorner.CornerRadius = UDim.new(0, 2)
+accentCorner.Parent = accentBar
+local sectionTitle = Instance.new("TextLabel")
+sectionTitle.Size = UDim2.new(1, -20, 1, 0)
+sectionTitle.Position = UDim2.new(0, 16, 0, 0)
+sectionTitle.BackgroundTransparency = 1
+sectionTitle.Text = title
+sectionTitle.TextColor3 = ThemeColors.Text
+sectionTitle.TextSize = 11
+sectionTitle.Font = Enum.Font.GothamBold
+sectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+sectionTitle.Parent = section
+return section
+end
+local function isEnemy(player)
+if not LocalPlayer.Team or not player.Team then
+return true
+end
+return LocalPlayer.Team ~= player.Team
+end
+local function safeDestroy(obj)
+if obj and obj.Parent then
+obj:Destroy()
+end
+end
+local function c4Check(item)
+if not item then return false end
+local name = item.Name:lower()
+return (name == "c4" or name == "bomb" or name == "c4 bomb")
+end
+local function showDamageLabel(part, amount)
+if not part then return end
+local bg = Instance.new("BillboardGui")
+bg.Name = "DmgIndicator"
+bg.Adornee = part
+bg.Size = UDim2.new(0, 75, 0, 38)
+bg.StudsOffset = Vector3.new(0, 2, 0)
+bg.AlwaysOnTop = true
+local label = Instance.new("TextLabel")
+label.Parent = bg
+label.BackgroundTransparency = 1
+label.Size = UDim2.new(1, 0, 1, 0)
+label.Text = "-" .. tostring(amount)
+label.TextColor3 = Color3.fromRGB(255, 50, 0)
+label.TextStrokeTransparency = 0
+label.Font = Enum.Font.GothamBold
+label.TextSize = 25
+label.TextScaled = true
+local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+if pGui then
+bg.Parent = pGui
+else
+bg.Parent = game:GetService("CoreGui")
+end
+local tweenInfo = TweenInfo.new(KAAN.Visuals.HitmarkerDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local goal = {StudsOffset = Vector3.new(math.random(-2,2), 5, math.random(-2,2)), Size = UDim2.new(0, 75, 0, 38)}
+local ts = game:GetService("TweenService")
+ts:Create(bg, tweenInfo, goal):Play()
+local goalLabel = {TextTransparency = 1, TextStrokeTransparency = 1}
+ts:Create(label, tweenInfo, goalLabel):Play()
+game:GetService("Debris"):AddItem(bg, KAAN.Visuals.HitmarkerDuration)
+end
+local ESPTemplates = {
+Highlight = nil,
+Billboard = nil,
+TextBillboard = nil,
+RightBillboard = nil
+}
+local function createESPTemplates()
+local highlight = Instance.new("Highlight")
+highlight.Name = "PlayerHighlight"
+highlight.FillTransparency = 1
+highlight.OutlineTransparency = 0
+highlight.Enabled = false
+ESPTemplates.Highlight = highlight
+local billboard = Instance.new("BillboardGui")
+billboard.Name = "EliteESP_Box"
+billboard.Size = UDim2.new(4.5, 0, 5.5, 0)
+billboard.AlwaysOnTop = true
+billboard.MaxDistance = 20000
+billboard.LightInfluence = 0
+billboard.StudsOffset = Vector3.new(0, 0.5, 0)
+billboard.Enabled = false
+ESPTemplates.Billboard = billboard
+local healthBack = Instance.new("Frame")
+healthBack.Name = "HealthBack"
+healthBack.Size = UDim2.new(0, 4, 0.6, 0)
+healthBack.Position = UDim2.new(0.25, 0, 0.5, 0)
+healthBack.AnchorPoint = Vector2.new(0.5, 0.5)
+healthBack.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+healthBack.BackgroundTransparency = 0.3
+healthBack.BorderSizePixel = 1
+healthBack.BorderColor3 = Color3.fromRGB(40, 40, 40)
+healthBack.Parent = billboard
+local healthStroke = Instance.new("UIStroke")
+healthStroke.Thickness = 1
+healthStroke.Color = Color3.new(0, 0, 0)
+healthStroke.Transparency = 0.5
+healthStroke.Parent = healthBack
+local healthFill = Instance.new("Frame")
+healthFill.Name = "HealthFill"
+healthFill.Size = UDim2.new(1, 0, 1, 0)
+healthFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+healthFill.BorderSizePixel = 0
+healthFill.AnchorPoint = Vector2.new(0, 1)
+healthFill.Position = UDim2.new(0, 0, 1, 0)
+healthFill.Parent = healthBack
+local hpLabel = Instance.new("TextLabel")
+hpLabel.Name = "HPLabel"
+hpLabel.Size = UDim2.new(0, 35, 0, 14)
+hpLabel.Position = UDim2.new(0, -2, 0.5, 0)
+hpLabel.AnchorPoint = Vector2.new(1, 0.5)
+hpLabel.BackgroundTransparency = 1
+hpLabel.Text = "100"
+hpLabel.TextColor3 = Color3.new(1, 1, 1)
+hpLabel.TextStrokeTransparency = 0
+hpLabel.TextSize = 12
+hpLabel.Font = Enum.Font.GothamBold
+hpLabel.Parent = healthBack
+local hpStroke = Instance.new("UIStroke")
+hpStroke.Thickness = 1.3
+hpStroke.Parent = hpLabel
+local textBillboard = Instance.new("BillboardGui")
+textBillboard.Name = "EliteESP_Text"
+textBillboard.Size = UDim2.new(0, 200, 0, 50)
+textBillboard.AlwaysOnTop = true
+textBillboard.MaxDistance = math.huge
+textBillboard.LightInfluence = 0
+textBillboard.StudsOffset = Vector3.new(0, 3.5, 0)
+textBillboard.Enabled = false
+ESPTemplates.TextBillboard = textBillboard
+local infoContainer = Instance.new("Frame")
+infoContainer.Name = "Info"
+infoContainer.Size = UDim2.new(1, 0, 1, 0)
+infoContainer.BackgroundTransparency = 1
+infoContainer.Parent = textBillboard
+local listLayout = Instance.new("UIListLayout")
+listLayout.FillDirection = Enum.FillDirection.Vertical
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = infoContainer
+local rightBillboard = Instance.new("BillboardGui")
+rightBillboard.Name = "EliteESP_Right"
+rightBillboard.Size = UDim2.new(0, 100, 0, 100)
+rightBillboard.AlwaysOnTop = true
+rightBillboard.MaxDistance = math.huge
+rightBillboard.LightInfluence = 0
+rightBillboard.StudsOffset = Vector3.new(3.5, 0.5, 0)
+rightBillboard.Active = false
+rightBillboard.Enabled = false
+ESPTemplates.RightBillboard = rightBillboard
+local rightContainer = Instance.new("Frame")
+rightContainer.Name = "Container"
+rightContainer.Size = UDim2.new(1, 0, 1, 0)
+rightContainer.BackgroundTransparency = 1
+rightContainer.Parent = rightBillboard
+local rightList = Instance.new("UIListLayout")
+rightList.FillDirection = Enum.FillDirection.Vertical
+rightList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+rightList.VerticalAlignment = Enum.VerticalAlignment.Center
+rightList.SortOrder = Enum.SortOrder.LayoutOrder
+rightList.Padding = UDim.new(0, 2)
+rightList.Parent = rightContainer
+local c4Label = Instance.new("TextLabel")
+c4Label.Name = "C4Label"
+c4Label.Size = UDim2.new(1, 0, 0, 12)
+c4Label.BackgroundTransparency = 1
+c4Label.Text = "💣 C4"
+c4Label.TextColor3 = COLOR_BOMB
+c4Label.TextStrokeTransparency = 0
+c4Label.TextSize = 12
+c4Label.TextXAlignment = Enum.TextXAlignment.Center
+c4Label.Font = Enum.Font.GothamBold
+c4Label.LayoutOrder = 1
+c4Label.Visible = false
+c4Label.Parent = rightContainer
+local c4Stroke = Instance.new("UIStroke")
+c4Stroke.Thickness = 1
+c4Stroke.Parent = c4Label
+local weaponLabel = Instance.new("TextLabel")
+weaponLabel.Name = "WeaponLabel"
+weaponLabel.Size = UDim2.new(1, 0, 0, 12)
+weaponLabel.BackgroundTransparency = 1
+weaponLabel.Text = "AK-47"
+weaponLabel.TextColor3 = Color3.new(1, 1, 1)
+weaponLabel.TextStrokeTransparency = 0
+weaponLabel.TextSize = 11
+weaponLabel.TextXAlignment = Enum.TextXAlignment.Center
+weaponLabel.Font = Enum.Font.GothamBold
+weaponLabel.LayoutOrder = 2
+weaponLabel.Parent = rightContainer
+local pingLabel = Instance.new("TextLabel")
+pingLabel.Name = "PingLabel"
+pingLabel.Size = UDim2.new(1, 0, 0, 12)
+pingLabel.BackgroundTransparency = 1
+pingLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+pingLabel.TextStrokeTransparency = 0.3
+pingLabel.TextSize = 11
+pingLabel.TextXAlignment = Enum.TextXAlignment.Center
+pingLabel.Font = Enum.Font.Gotham
+pingLabel.LayoutOrder = 3
+pingLabel.Parent = rightContainer
+local pingStroke = Instance.new("UIStroke")
+pingStroke.Thickness = 1
+pingStroke.Transparency = 0.5
+pingStroke.Parent = pingLabel
+end
+createESPTemplates() -- Inicializa
+local function addESP(character, player)
+if not character or player == LocalPlayer then return end
+if espCache[character] then return end -- Já existe cache
+local head = character:FindFirstChild("Head") or character:FindFirstChild("HeadHB") or character:FindFirstChild("FakeHead")
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+if not head then return end
+local highlight = ESPTemplates.Highlight:Clone()
+highlight.OutlineColor = isEnemy(player) and COLOR_ENEMY or COLOR_TEAM
+highlight.Parent = character
+local billboard = ESPTemplates.Billboard:Clone()
+billboard.Parent = character:FindFirstChild("HumanoidRootPart") or head
+local healthBack = billboard:FindFirstChild("HealthBack")
+local healthFill = healthBack:FindFirstChild("HealthFill")
+local hpLabel = healthBack:FindFirstChild("HPLabel")
+local textBillboard = ESPTemplates.TextBillboard:Clone()
+textBillboard.Parent = character:FindFirstChild("HumanoidRootPart") or head
+local infoContainer = textBillboard:FindFirstChild("Info")
+local listLayout = infoContainer:FindFirstChild("UIListLayout") -- Already there because of template
+local rightBillboard = ESPTemplates.RightBillboard:Clone()
+rightBillboard.Parent = character:FindFirstChild("HumanoidRootPart") or head
+local rightContainer = rightBillboard:FindFirstChild("Container")
+local c4Label = rightContainer:FindFirstChild("C4Label")
+local weaponLabel = rightContainer:FindFirstChild("WeaponLabel")
+local pingLabel = rightContainer:FindFirstChild("PingLabel")
+listLayout.FillDirection = Enum.FillDirection.Vertical
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 1)
+listLayout.Parent = infoContainer
+local nameLabel = Instance.new("TextLabel")
+nameLabel.Name = "NameLabel"
+nameLabel.Size = UDim2.new(1, 0, 0, 15)
+nameLabel.BackgroundTransparency = 1
+nameLabel.Text = player.DisplayName or player.Name
+nameLabel.TextColor3 = isEnemy(player) and COLOR_ENEMY or COLOR_TEAM
+nameLabel.TextStrokeTransparency = 0
+nameLabel.TextSize = 13
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.LayoutOrder = 1
+nameLabel.Parent = infoContainer
+local nameStroke = Instance.new("UIStroke")
+nameStroke.Thickness = 1
+nameStroke.Parent = nameLabel
+local data = {
+Player = player,
+Humanoid = humanoid,
+Highlight = highlight,
+MainTag = billboard,
+TextTag = textBillboard,
+RightTag = rightBillboard,
+HealthBar = healthFill,
+Labels = {
+Name = nameLabel,
+Ping = pingLabel,
+C4 = c4Label,
+HP = hpLabel,
+Weapon = weaponLabel
+},
+RightTag = rightBillboard,
+WeaponLabel = nil,
+Head = head,
+HasC4 = false,
+Connections = {}
+}
+espCache[character] = data
+local lastHealth = humanoid.Health
+table.insert(data.Connections, humanoid.HealthChanged:Connect(function(newHealth)
+if newHealth < lastHealth then
+local dmg = lastHealth - newHealth
+local isMyDamage = false
+local creator = humanoid:FindFirstChild("creator")
+if creator and creator.Value == LocalPlayer then
+isMyDamage = true
+elseif KAAN.Rage.IsFiringThisFrame or KAAN.Aim.IsFiringThisFrame then
+if (currentTargetForPart == player) or (not creator) then
+isMyDamage = true
+end
+end
+if isMyDamage then
+if KAAN.Visuals.DamageEsp and dmg > 0 then
+showDamageLabel(head, math.floor(dmg))
+end
+if newHealth <= 0 and lastHealth > 0 then
+if KAAN.Misc.ChatSpam.Enabled and KAAN.Rage.Enabled then
+sendChatMessage(KAAN.Misc.ChatSpam.Message)
+end
+end
+end
+end
+lastHealth = newHealth
+end))
+end
+local function removeESP(character)
+local data = espCache[character]
+if data then
+if data.Connections then
+for _, conn in ipairs(data.Connections) do
+conn:Disconnect()
+end
+end
+safeDestroy(data.Highlight)
+safeDestroy(data.MainTag)
+safeDestroy(data.TextTag) -- Limpa o novo Billboard
+safeDestroy(data.RightTag) -- Limpa tag da direita
+espCache[character] = nil
+end
+end
+local worldC4Highlight = nil
+local worldC4Tag = nil
+local c4TimerGUI = nil
+local C4TimerState = {
+IsPlanted = false,
+PlantTime = 0,
+Duration = 40,
+LastC4 = nil,
+LastBeepTime = 0 -- Anti-flicker
+}
+local function createC4TimerHUD()
+if c4TimerGUI then return end
+c4TimerGUI = Instance.new("ScreenGui")
+c4TimerGUI.Name = "KAANC4Timer"
+c4TimerGUI.IgnoreGuiInset = true
+c4TimerGUI.ResetOnSpawn = false
+c4TimerGUI.DisplayOrder = 5
+c4TimerGUI.Parent = game.CoreGui
+local container = Instance.new("Frame")
+container.Name = "Container"
+container.Size = UDim2.new(0, 180, 0, 50)
+container.Position = UDim2.new(0.5, -90, 0, 110)
+container.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+container.BackgroundTransparency = 0.2
+container.BorderSizePixel = 0
+container.Visible = false
+container.Parent = c4TimerGUI
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = container
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(138, 43, 226) -- Roxo
+stroke.Thickness = 2
+stroke.Parent = container
+local label = Instance.new("TextLabel")
+label.Name = "Label"
+label.Size = UDim2.new(1, 0, 0, 22)
+label.Position = UDim2.new(0, 0, 0, 5)
+label.BackgroundTransparency = 1
+label.Text = "💣 C4 PLANTED"
+label.TextColor3 = Color3.fromRGB(255, 100, 100)
+label.TextStrokeTransparency = 0
+label.Font = Enum.Font.GothamBlack
+label.TextSize = 14
+label.Parent = container
+local timerLabel = Instance.new("TextLabel")
+timerLabel.Name = "Timer"
+timerLabel.Size = UDim2.new(1, 0, 0, 14)
+timerLabel.Position = UDim2.new(0, 0, 0, 24)
+timerLabel.BackgroundTransparency = 1
+timerLabel.Text = "40.0s"
+timerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+timerLabel.TextStrokeTransparency = 0.3
+timerLabel.Font = Enum.Font.GothamBold
+timerLabel.TextSize = 12
+timerLabel.Parent = container
+local barBg = Instance.new("Frame")
+barBg.Name = "BarBg"
+barBg.Size = UDim2.new(0.9, 0, 0, 8)
+barBg.Position = UDim2.new(0.05, 0, 0, 40)
+barBg.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+barBg.BorderSizePixel = 0
+barBg.Parent = container
+local barCorner = Instance.new("UICorner")
+barCorner.CornerRadius = UDim.new(0, 4)
+barCorner.Parent = barBg
+local barFill = Instance.new("Frame")
+barFill.Name = "Fill"
+barFill.Size = UDim2.new(1, 0, 1, 0)
+barFill.BackgroundColor3 = Color3.fromRGB(138, 43, 226) -- Roxo
+barFill.BorderSizePixel = 0
+barFill.Parent = barBg
+local fillCorner = Instance.new("UICorner")
+fillCorner.CornerRadius = UDim.new(0, 4)
+fillCorner.Parent = barFill
+local gradient = Instance.new("UIGradient")
+gradient.Color = ColorSequence.new({
+ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 100, 255)),
+ColorSequenceKeypoint.new(1, Color3.fromRGB(138, 43, 226))
+})
+gradient.Parent = barFill
+end
+local function updateC4TimerHUD(visible, remaining, percent)
+if not c4TimerGUI then createC4TimerHUD() end
+local container = c4TimerGUI:FindFirstChild("Container")
+if not container then return end
+container.Visible = visible
+if visible then
+local timerLabel = container:FindFirstChild("Timer")
+if timerLabel then
+timerLabel.Text = string.format("%.1fs", remaining)
+if remaining < 10 then
+timerLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+elseif remaining < 20 then
+timerLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+else
+timerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+end
+end
+local barBg = container:FindFirstChild("BarBg")
+if barBg then
+local fill = barBg:FindFirstChild("Fill")
+if fill then
+fill.Size = UDim2.new(percent, 0, 1, 0)
+if remaining < 10 then
+fill.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+elseif remaining < 20 then
+fill.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+else
+fill.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+end
+end
+end
+end
+end
+local function updateWorldC4ESP()
+if not KAAN.ESP.Enabled then
+if worldC4Highlight then worldC4Highlight:Destroy() worldC4Highlight = nil end
+if worldC4Tag then worldC4Tag:Destroy() worldC4Tag = nil end
+C4TimerState.IsPlanted = false
+C4TimerState.LastC4 = nil
+updateC4TimerHUD(false, 0, 0)
+return
+end
+local c4Found = nil
+local isPlantedBomb = false -- Diferencia plantada de dropada
+local function checkFolder(folder)
+if not folder then return nil, false end
+for _, child in ipairs(folder:GetChildren()) do
+local name = child.Name:lower()
+if (name:find("c4") or name:find("bomb")) and not name:find("segway") and not name:find("sign") then
+if child:IsA("Tool") then
+return child, false
+end
+if child:IsA("Model") or child:IsA("BasePart") then
+local hasSound = child:FindFirstChildWhichIsA("Sound") ~= nil
+local hasLight = child:FindFirstChildWhichIsA("PointLight") ~= nil or child:FindFirstChildWhichIsA("SpotLight") ~= nil
+local hasParticle = child:FindFirstChildWhichIsA("ParticleEmitter") ~= nil
+local hasBeep = child:FindFirstChild("Beep") ~= nil or child:FindFirstChild("beep") ~= nil
+if hasSound or hasLight or hasParticle or hasBeep then
+return child, true
+end
+if folder == workspace then
+return child, true
+end
+return child, false
+end
+end
+end
+return nil, false
+end
+local planted1, isPlanted1 = checkFolder(workspace)
+local planted2, isPlanted2 = checkFolder(workspace:FindFirstChild("Debris"))
+local planted3, isPlanted3 = checkFolder(workspace:FindFirstChild("Ray_Ignore"))
+if planted1 then c4Found = planted1; isPlantedBomb = isPlanted1
+elseif planted2 then c4Found = planted2; isPlantedBomb = isPlanted2
+elseif planted3 then c4Found = planted3; isPlantedBomb = isPlanted3
+end
+if c4Found then
+if c4Found ~= C4TimerState.LastC4 then
+C4TimerState.IsPlanted = isPlantedBomb
+C4TimerState.PlantTime = tick()
+C4TimerState.LastC4 = c4Found
+end
+if isPlantedBomb then
+local isBeeping = false
+local sound = c4Found:FindFirstChildWhichIsA("Sound", true)
+if sound and sound.Playing then
+isBeeping = true
+C4TimerState.LastBeepTime = tick()
+else
+local light = c4Found:FindFirstChildWhichIsA("PointLight", true) or c4Found:FindFirstChildWhichIsA("SpotLight", true)
+if light and light.Enabled then
+isBeeping = true
+C4TimerState.LastBeepTime = tick()
+end
+end
+local silencyDuration = tick() - C4TimerState.LastBeepTime
+local isDefused = (silencyDuration > 2.0) and (tick() - C4TimerState.PlantTime > 2.0)
+if isDefused then
+updateC4TimerHUD(false, 0, 0)
+C4TimerState.IsPlanted = false
+else
+local elapsed = tick() - C4TimerState.PlantTime
+local remaining = math.max(0, C4TimerState.Duration - elapsed)
+local percent = remaining / C4TimerState.Duration
+if KAAN.ESP.C4Timer then
+updateC4TimerHUD(true, remaining, percent)
+else
+updateC4TimerHUD(false, 0, 0)
+end
+end
+else
+updateC4TimerHUD(false, 0, 0)
+end
+if KAAN.ESP.ShowBomb then
+local highlightTarget = c4Found
+local boxSize = Vector3.new(1, 1, 1) -- Tamanho default
+if c4Found:IsA("Tool") or c4Found:IsA("Model") then
+local bestPart = nil
+local maxVolume = 0
+local parts = (c4Found:IsA("Tool") and c4Found:GetChildren()) or c4Found:GetDescendants()
+for _, child in ipairs(parts) do
+if child:IsA("BasePart") then
+local vol = child.Size.X * child.Size.Y * child.Size.Z
+if vol > maxVolume then
+maxVolume = vol
+bestPart = child
+end
+end
+end
+if bestPart then
+highlightTarget = bestPart
+boxSize = bestPart.Size
+else
+if c4Found:IsA("Model") then
+local _, size = c4Found:GetBoundingBox()
+boxSize = size
+highlightTarget = c4Found.PrimaryPart or c4Found:FindFirstChildWhichIsA("BasePart") or c4Found
+else
+highlightTarget = c4Found:FindFirstChildWhichIsA("BasePart") or c4Found
+end
+end
+elseif c4Found:IsA("BasePart") then
+highlightTarget = c4Found
+boxSize = c4Found.Size
+end
+if not worldC4Highlight or worldC4Highlight.Adornee ~= highlightTarget or not worldC4Highlight:IsA("BoxHandleAdornment") then
+if worldC4Highlight then worldC4Highlight:Destroy() end
+worldC4Highlight = Instance.new("BoxHandleAdornment")
+worldC4Highlight.Name = "C4ESPBox"
+worldC4Highlight.Size = boxSize + Vector3.new(0.1, 0.1, 0.1) -- Levemente maior
+worldC4Highlight.Color3 = COLOR_BOMB
+worldC4Highlight.Transparency = 0.4
+worldC4Highlight.AlwaysOnTop = true
+worldC4Highlight.ZIndex = 10
+worldC4Highlight.Adornee = highlightTarget
+worldC4Highlight.Parent = game:GetService("CoreGui")
+end
+if worldC4Highlight and worldC4Highlight:IsA("BoxHandleAdornment") then
+worldC4Highlight.Size = boxSize + Vector3.new(0.1, 0.1, 0.1)
+worldC4Highlight.Color3 = COLOR_BOMB -- Garante a cor
+worldC4Highlight.Adornee = highlightTarget
+worldC4Highlight.Visible = true
+end
+local tagParent = c4Found:FindFirstChildWhichIsA("BasePart") or c4Found
+if not worldC4Tag or worldC4Tag.Adornee ~= tagParent then
+if worldC4Tag then worldC4Tag:Destroy() end
+worldC4Tag = Instance.new("BillboardGui")
+worldC4Tag.Name = "C4Tag"
+worldC4Tag.Size = UDim2.new(0, 60, 0, 20)
+worldC4Tag.StudsOffset = Vector3.new(0, 2, 0)
+worldC4Tag.AlwaysOnTop = true
+worldC4Tag.Parent = game:GetService("CoreGui")
+worldC4Tag.Adornee = tagParent
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, 0, 1, 0)
+label.BackgroundTransparency = 1
+label.Text = "💣 C4"
+label.TextColor3 = COLOR_BOMB
+label.TextStrokeTransparency = 0
+label.TextSize = 18
+label.Font = Enum.Font.GothamBlack
+label.Parent = worldC4Tag
+end
+end
+if worldC4Highlight then
+if worldC4Highlight:IsA("Highlight") then worldC4Highlight.Enabled = true
+elseif worldC4Highlight:IsA("BoxHandleAdornment") then worldC4Highlight.Visible = true end
+end
+if worldC4Tag then worldC4Tag.Enabled = true end
+else
+if worldC4Highlight then worldC4Highlight:Destroy() worldC4Highlight = nil end
+if worldC4Tag then worldC4Tag:Destroy() worldC4Tag = nil end
+C4TimerState.IsPlanted = false
+C4TimerState.LastC4 = nil
+updateC4TimerHUD(false, 0, 0)
+end
+if not KAAN.ESP.ShowBomb then
+if worldC4Highlight then
+if worldC4Highlight:IsA("Highlight") then worldC4Highlight.Enabled = false
+elseif worldC4Highlight:IsA("BoxHandleAdornment") then worldC4Highlight.Visible = false end
+end
+if worldC4Tag then worldC4Tag.Enabled = false end
+end
+if not KAAN.ESP.C4Timer then
+updateC4TimerHUD(false, 0, 0)
+end
+end
+local ValidWeapons = {
+["AK47"] = true, ["M4A4"] = true, ["M4A1"] = true, ["AWP"] = true, ["Famas"] = true,
+["Galil"] = true, ["Scout"] = true, ["SG553"] = true, ["SG"] = true, ["AUG"] = true,
+["G3SG1"] = true, ["SSG08"] = true,
+["Glock"] = true, ["USP"] = true, ["DesertEagle"] = true, ["P250"] = true,
+["FiveSeven"] = true, ["Tec9"] = true, ["CZ75"] = true, ["CZ"] = true,
+["DualBerettas"] = true, ["P2000"] = true, ["R8"] = true,
+["MAC10"] = true, ["MP9"] = true, ["MP7"] = true, ["P90"] = true,
+["Bizon"] = true, ["UMP"] = true, ["UMP45"] = true,
+["Nova"] = true, ["XM1014"] = true, ["MAG7"] = true, ["SawedOff"] = true,
+["M249"] = true, ["Negev"] = true, ["XM"] = true,
+["Flashbang"] = true, ["HE Grenade"] = true, ["Smoke Grenade"] = true,
+["Molotov"] = true, ["Incendiary"] = true, ["Decoy"] = true,
+["HE"] = true, ["Smoke"] = true, ["Flash"] = true, ["Incendiary Granade"] = true
+}
+local droppedWeaponCache = {}
+local function updateDroppedWeapons()
+local debris = workspace:FindFirstChild("Debris")
+if not debris then return end
+for obj, gui in pairs(droppedWeaponCache) do
+if not obj or not obj.Parent then
+if gui then gui:Destroy() end
+droppedWeaponCache[obj] = nil
+elseif not KAAN.ESP.DroppedWeapons then
+gui.Enabled = false
+end
+end
+if not KAAN.ESP.DroppedWeapons then return end
+for _, item in ipairs(debris:GetChildren()) do
+if (item:IsA("BasePart") or item:IsA("Model")) and ValidWeapons[item.Name] then
+local gui = droppedWeaponCache[item]
+if not gui then
+gui = Instance.new("BillboardGui")
+gui.Name = "WeaponTag_" .. item.Name
+gui.Size = UDim2.new(0, 100, 0, 20)
+gui.StudsOffset = Vector3.new(0, 1, 0)
+gui.AlwaysOnTop = true
+gui.Parent = game:GetService("CoreGui")
+gui.Adornee = item
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, 0, 1, 0)
+label.BackgroundTransparency = 1
+label.Text = item.Name
+label.TextColor3 = Color3.fromRGB(135, 206, 235) -- Sky Blue
+label.TextStrokeTransparency = 0
+label.TextSize = 11
+label.Font = Enum.Font.GothamBlack
+label.Parent = gui
+local box = Instance.new("BoxHandleAdornment")
+box.Name = "WeaponBox"
+local size = (item:IsA("Model") and item:GetExtentsSize()) or item.Size
+box.Size = size + Vector3.new(0.1, 0.1, 0.1)
+box.Color3 = Color3.fromRGB(135, 206, 235) -- Sky Blue (Diferente da C4)
+box.Transparency = 0.5
+box.AlwaysOnTop = true
+box.ZIndex = 5
+box.Adornee = item
+box.Parent = gui
+droppedWeaponCache[item] = gui
+else
+gui.Enabled = true
+end
+end
+end
+end
+local function updateESP()
+for character, data in pairs(espCache) do
+if character and character.Parent and data.Player then
+local humanoid = data.Humanoid
+if not humanoid then
+humanoid = character:FindFirstChildOfClass("Humanoid")
+data.Humanoid = humanoid
+end
+local isAlive = humanoid and humanoid.Health > 0
+if not isAlive then
+if data.Highlight then data.Highlight.Enabled = false end
+if data.MainTag then data.MainTag.Enabled = false end
+if data.TextTag then
+data.TextTag.Enabled = false
+if data.Labels.C4 then data.Labels.C4.Visible = false end
+end
+if data.RightTag then data.RightTag.Enabled = false end
+else
+local enemy = isEnemy(data.Player)
+local baseVisible = KAAN.ESP.Enabled and (not KAAN.ESP.EnemyOnly or enemy)
+local weaponName = nil
+if KAAN.ESP.Weapon then
+local eq = character:FindFirstChild("EquippedTool")
+if eq and eq:IsA("StringValue") and eq.Value ~= "" then
+weaponName = eq.Value
+else
+local tool = character:FindFirstChildOfClass("Tool")
+if tool then weaponName = tool.Name end
+end
+end
+local playerHasBomb = false
+local bombObject = nil
+if KAAN.ESP.ShowBomb then
+local isTerrorist = false
+local playerTeam = data.Player and data.Player.Team
+if playerTeam then
+local teamName = playerTeam.Name:lower()
+isTerrorist = teamName:find("terror") or teamName:find("^t$") or teamName == "t"
+end
+if isTerrorist then
+local backC4 = character:FindFirstChild("BackC4")
+if backC4 and backC4:IsA("BasePart") and backC4.Transparency < 1 then
+playerHasBomb = true
+bombObject = backC4
+end
+if not playerHasBomb then
+local eq = character:FindFirstChild("EquippedTool")
+if eq and eq:IsA("StringValue") and (eq.Value == "C4" or eq.Value == "c4") then
+playerHasBomb = true
+bombObject = character:FindFirstChild("C4") or character:FindFirstChild("c4")
+end
+end
+if not playerHasBomb then
+local bp = data.Player:FindFirstChild("Backpack")
+if bp then
+if bp:FindFirstChild("C4") or bp:FindFirstChild("c4") then
+playerHasBomb = true
+end
+end
+end
+if not playerHasBomb then
+local gun = character:FindFirstChild("Gun")
+if gun then
+local gunBomb = gun:FindFirstChild("Bomb")
+if gunBomb and gunBomb:IsA("BasePart") and gunBomb.Transparency < 1 then
+playerHasBomb = true
+bombObject = gunBomb
+end
+end
+end
+end
+end
+if bombObject then
+if not data.BombHighlight then
+local h = Instance.new("Highlight")
+h.Name = "BombHighlight"
+h.FillColor = COLOR_BOMB
+h.OutlineColor = COLOR_BOMB
+h.FillTransparency = 0.4
+h.OutlineTransparency = 0
+h.Parent = game:GetService("CoreGui")
+data.BombHighlight = h
+end
+data.BombHighlight.Adornee = bombObject
+data.BombHighlight.Enabled = true
+else
+if data.BombHighlight then
+data.BombHighlight.Enabled = false
+end
+end
+local color = playerHasBomb and COLOR_BOMB or (enemy and COLOR_ENEMY or COLOR_TEAM)
+if data.Highlight then
+local highlightColor = enemy and COLOR_ENEMY or COLOR_TEAM
+local shouldShowHigh = baseVisible and KAAN.ESP.Highlight
+if data.Highlight.Enabled ~= shouldShowHigh then
+data.Highlight.Enabled = shouldShowHigh
+end
+if shouldShowHigh then
+data.Highlight.OutlineColor = highlightColor
+data.Highlight.FillTransparency = 1
+end
+end
+local showNames = (baseVisible or (playerHasBomb and KAAN.ESP.ShowBomb)) and KAAN.ESP.Names
+local showHealth = baseVisible and KAAN.ESP.Health
+local showWeapon = (weaponName ~= nil)
+local showC4 = (playerHasBomb and KAAN.ESP.ShowBomb)
+local showPing = KAAN.ESP.ShowPing
+local rightTagVisible = baseVisible and (showWeapon or showC4 or showPing)
+local mainTagActive = showHealth or rightTagVisible
+if data.MainTag.Enabled ~= mainTagActive then
+data.MainTag.Enabled = mainTagActive
+end
+local showTextTag = showNames or playerHasBomb
+if data.TextTag then
+if data.TextTag.Enabled ~= showTextTag then
+data.TextTag.Enabled = showTextTag
+end
+end
+if showHealth then
+if humanoid then
+local hpPercent = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+local hpColor = Color3.fromHSV(hpPercent * 0.35, 1, 1)
+data.HealthBar.Size = UDim2.new(1, 0, hpPercent, 0)
+data.HealthBar.BackgroundColor3 = hpColor
+data.Labels.HP.Text = tostring(math.floor(humanoid.Health))
+data.Labels.HP.TextColor3 = hpColor
+data.HealthBar.Parent.Visible = showHealth
+data.Labels.HP.Visible = showHealth
+end
+end
+if showTextTag then
+data.Labels.Name.Visible = showNames
+if showNames then
+data.Labels.Name.TextColor3 = color
+end
+else
+if data.Labels.Name then data.Labels.Name.Visible = false end
+end
+if data.RightTag then
+if rightTagVisible then
+data.RightTag.Enabled = true
+if data.Labels.Weapon then
+data.Labels.Weapon.Visible = showWeapon
+if showWeapon then
+data.Labels.Weapon.Text = weaponName
+end
+end
+if data.Labels.C4 then
+data.Labels.C4.Visible = showC4
+end
+if data.Labels.Ping then
+data.Labels.Ping.Visible = showPing
+if showPing then
+local pObj = data.Player and data.Player:FindFirstChild("Ping")
+local pingVal = pObj and pObj.Value or 0
+data.Labels.Ping.Text = "[" .. tostring(pingVal) .. "ms]"
+end
+end
+else
+data.RightTag.Enabled = false
+end
+end
+end
+else
+removeESP(character)
+end
+end
+updateWorldC4ESP()
+end
+task.spawn(function()
+while true do
+updateWorldC4ESP()
+updateDroppedWeapons() -- Check armas no chão
+task.wait(0.5) -- 0.5s para maior responsividade
+end
+end)
+local arrowCache = {}
+local ArrowGui = Instance.new("ScreenGui")
+ArrowGui.Name = "KAANAnswers"
+ArrowGui.IgnoreGuiInset = true
+ArrowGui.ResetOnSpawn = false
+ArrowGui.Parent = game.CoreGui
+local function createArrow()
+local arrow = Instance.new("TextLabel")
+arrow.Name = "Arrow"
+arrow.Size = UDim2.new(0, 80, 0, 80)
+arrow.AnchorPoint = Vector2.new(0.5, 0.5)
+arrow.BackgroundTransparency = 1
+arrow.Text = "▶"
+arrow.TextSize = 80
+arrow.Font = Enum.Font.GothamBold
+arrow.TextColor3 = KAAN.Visuals.ArrowColor
+arrow.TextTransparency = 0.6
+arrow.TextStrokeTransparency = 0.7
+arrow.TextStrokeColor3 = Color3.new(0,0,0)
+arrow.Parent = ArrowGui
+arrow.Visible = false
+return arrow
+end
+local function updateViewArrows()
+if not KAAN.Visuals.ViewArrows then
+ArrowGui.Enabled = false
+return
+end
+ArrowGui.Enabled = true
+local camera = workspace.CurrentCamera
+if not camera then return end
+for player, arrow in pairs(arrowCache) do
+if not player or not player.Parent then
+if arrow then arrow:Destroy() end
+arrowCache[player] = nil
+end
+end
+local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+local radius = KAAN.Visuals.ArrowRadius or 300
+for _, arrow in pairs(arrowCache) do
+if arrow then arrow.Visible = false end
+end
+for _, player in ipairs(Players:GetPlayers()) do
+if player ~= LocalPlayer and isEnemy(player) then
+local char = player.Character
+local root = char and char:FindFirstChild("HumanoidRootPart")
+local hum = char and char:FindFirstChildOfClass("Humanoid")
+if root and hum and hum.Health > 0 then
+local screenPoint, onScreen = camera:WorldToViewportPoint(root.Position)
+local isBehind = screenPoint.Z < 0
+local arrow = arrowCache[player]
+if not arrow then
+arrow = createArrow()
+arrowCache[player] = arrow
+end
+if not onScreen or isBehind then
+arrow.Visible = true
+arrow.TextColor3 = KAAN.Visuals.ArrowColor
+arrow.TextTransparency = 0.6
+arrow.TextSize = 80
+local relativePos = camera.CFrame:PointToObjectSpace(root.Position)
+local angle = math.atan2(relativePos.Y, relativePos.X)
+local arrowX = center.X + math.cos(angle) * radius
+local arrowY = center.Y - math.sin(angle) * radius
+arrow.Position = UDim2.new(0, arrowX, 0, arrowY)
+arrow.Rotation = math.deg(-angle) -- Rotação visual para acompanhar
+else
+arrow.Visible = false
+end
+else
+if arrowCache[player] then arrowCache[player].Visible = false end
+end
+else
+if arrowCache[player] then arrowCache[player].Visible = false end
+end
+end
+end
+RunService.RenderStepped:Connect(function()
+updateViewArrows()
+end)
+local function scanAllMapObjects()
+print("==========================================")
+print("🗺️ SCANNER DE MAPA - Iniciando varredura completa...")
+print("==========================================\n")
+local map = workspace:FindFirstChild("Map")
+if not map then
+print("⚠️ Pasta 'Map' não encontrada. Escaneando workspace inteiro...")
+map = workspace
+end
+local objectsByMaterial = {}
+local objectsByName = {}
+local uniqueObjects = {}
+local totalObjects = 0
+for _, obj in ipairs(map:GetDescendants()) do
+if obj:IsA("BasePart") then
+totalObjects = totalObjects + 1
+local materialName = tostring(obj.Material):gsub("Enum%.Material%.", "")
+local fullName = obj:GetFullName()
+if not uniqueObjects[fullName] then
+uniqueObjects[fullName] = {
+Name = obj.Name,
+Material = materialName,
+Size = obj.Size,
+CanCollide = obj.CanCollide,
+Transparency = obj.Transparency
+}
+if not objectsByMaterial[materialName] then
+objectsByMaterial[materialName] = {}
+end
+table.insert(objectsByMaterial[materialName], fullName)
+local baseName = obj.Name:match("^([^_]+)") or obj.Name
+if not objectsByName[baseName] then
+objectsByName[baseName] = 0
+end
+objectsByName[baseName] = objectsByName[baseName] + 1
+end
+end
+end
+print("📊 RESUMO POR MATERIAL:")
+print("========================")
+for material, objects in pairs(objectsByMaterial) do
+print(string.format("  %s: %d objetos únicos", material, #objects))
+end
+print("\n📋 RESUMO POR NOME BASE:")
+print("========================")
+local nameList = {}
+for name, count in pairs(objectsByName) do
+table.insert(nameList, {name = name, count = count})
+end
+table.sort(nameList, function(a, b) return a.count > b.count end)
+for _, item in ipairs(nameList) do
+if item.count > 3 then
+print(string.format("  %s: %d objetos", item.name, item.count))
+end
+end
+print("\n🔍 DIAGNÓSTICO C4 (PLAYERS):")
+print("========================")
+for _, p in ipairs(game.Players:GetPlayers()) do
+if p.Character then
+print("  👤 Player: " .. p.Name)
+if p.Character:FindFirstChild("EquippedTool") then
+print("    > EquippedTool: " .. tostring(p.Character.EquippedTool.Value))
+end
+for _, item in ipairs(p.Character:GetDescendants()) do
+if item.Name:lower():find("c4") or item.Name:lower():find("bomb") then
+print("    🎯 [CHAR] FOUND: " .. item:GetFullName() .. " | Class: " .. item.ClassName)
+end
+end
+local bp = p:FindFirstChild("Backpack")
+if bp then
+for _, item in ipairs(bp:GetDescendants()) do
+if item.Name:lower():find("c4") or item.Name:lower():find("bomb") then
+print("    🎒 [BACKPACK] FOUND: " .. item:GetFullName() .. " | Class: " .. item.ClassName)
+end
+end
+end
+end
+end
+print("==========================================\n")
+print("\n🔫 ARMAS NO CHÃO (DEEP SEARCH):")
+print("===================================")
+local weaponsFound = 0
+local keywords = {"ak", "m4", "awp", "rifle", "pistol", "gun", "eagle", "scout", "sg", "aug", "famas", "galil", "glock", "usp", "p250", "tec", "cz", "mag", "nova", "sawed", "xm", "negev", "m249", "c4", "bomb"}
+for _, item in ipairs(workspace:GetDescendants()) do
+if item:IsA("Model") or item:IsA("BasePart") or item:IsA("Tool") then
+if not game.Players:GetPlayerFromCharacter(item.Parent) and not item:IsDescendantOf(game.Players) then
+local name = item.Name:lower()
+for _, kw in ipairs(keywords) do
+if name:find(kw) then
+if item.Parent.Name ~= "Map" and item.Parent.Parent.Name ~= "Map" then
+print(string.format("  🎯 FOUND (Keyword '%s'): %s | Class: %s | Parent: %s", kw, item.Name, item.ClassName, item.Parent.Name))
+weaponsFound = weaponsFound + 1
+break -- Achou uma keyword, pula pra proximo item
+end
+end
+end
+end
+end
+end
+print("\n📦 PASTAS SUSPEITAS NO WORKSPACE:")
+for _, child in ipairs(workspace:GetChildren()) do
+local n = child.Name
+if n ~= "Camera" and n ~= "Terrain" and n ~= "Map" and not game.Players:GetPlayerFromCharacter(child) then
+print(string.format("  📁 %s | Class: %s | Children: %d", n, child.ClassName, #child:GetChildren()))
+end
+end
+if weaponsFound == 0 then
+print("  (Nenhuma arma encontrada por keyword)")
+end
+print("==========================================\n")
+print("\n💎 LISTA COMPLETA DE OBJETOS ÚNICOS:")
+print("====================================")
+local sortedFullNames = {}
+for fullName, _ in pairs(uniqueObjects) do
+table.insert(sortedFullNames, fullName)
+end
+table.sort(sortedFullNames)
+for _, fullName in ipairs(sortedFullNames) do
+local obj = uniqueObjects[fullName]
+print(string.format("\n  %s", fullName))
+print(string.format("    Material: %s | Size: %s", obj.Material, tostring(obj.Size)))
+print(string.format("    CanCollide: %s | Transparency: %.2f", tostring(obj.CanCollide), obj.Transparency))
+end
+print("\n==========================================")
+print("✅ Scan completo!")
+print(string.format("   Total processado: %d objetos", totalObjects))
+print(string.format("   Objetos únicos: %d", #sortedFullNames))
+print("==========================================\n")
+end
+local function makeDraggable(frame)
+local dragging = false
+local dragInput, dragStart, startPos
+local function update(input)
+local delta = input.Position - dragStart
+frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+frame.InputBegan:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+dragging = true
+dragStart = input.Position
+startPos = frame.Position
+input.Changed:Connect(function()
+if input.UserInputState == Enum.UserInputState.End then
+dragging = false
+end
+end)
+end
+end)
+frame.InputChanged:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+dragInput = input
+end
+end)
+UserInputService.InputChanged:Connect(function(input)
+if input == dragInput and dragging then
+update(input)
+end
+end)
+end
+local function createSpectatorUI()
+if SpectatorState.Frame then return end
+SpectatorState.Frame = Instance.new("Frame")
+SpectatorState.Frame.Name = "SpectatorFrame"
+SpectatorState.Frame.Size = UDim2.new(0, 150, 0, 0)
+SpectatorState.Frame.Position = UDim2.new(0.85, 0, 0.25, 0)
+SpectatorState.Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+SpectatorState.Frame.BackgroundTransparency = 0.5
+SpectatorState.Frame.BorderSizePixel = 0
+SpectatorState.Frame.Visible = false
+SpectatorState.Frame.Parent = GuiInstances.ScreenGui -- Global ScreenGui
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 6)
+corner.Parent = SpectatorState.Frame
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(138, 43, 226)
+stroke.Thickness = 1
+stroke.Transparency = 0.5
+stroke.Parent = SpectatorState.Frame
+makeDraggable(SpectatorState.Frame)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 25)
+title.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+title.BackgroundTransparency = 0.5
+title.Text = "👁 SPECTATORS"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.Parent = SpectatorState.Frame
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 6)
+titleCorner.Parent = title
+SpectatorState.Content = Instance.new("Frame")
+SpectatorState.Content.Name = "Content"
+SpectatorState.Content.Size = UDim2.new(1, -10, 1, -30)
+SpectatorState.Content.Position = UDim2.new(0, 5, 0, 28)
+SpectatorState.Content.BackgroundTransparency = 1
+SpectatorState.Content.Parent = SpectatorState.Frame
+SpectatorState.ListLayout = Instance.new("UIListLayout")
+SpectatorState.ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SpectatorState.ListLayout.Padding = UDim.new(0, 2)
+SpectatorState.ListLayout.Parent = SpectatorState.Content
+end
+local function updateSpectators()
+local showUI = SpectatorState.Enabled and SpectatorState.Frame
+if not showUI and not AntiSpec.Enabled then
+if SpectatorState.Frame then SpectatorState.Frame.Visible = false end
+return
+end
+local currentCam = workspace.CurrentCamera
+if not currentCam then return end
+local myCamPos = currentCam.CFrame.Position
+local myCamLook = currentCam.CFrame.LookVector
+local spectators = {}
+for _, player in ipairs(Players:GetPlayers()) do
+if player ~= LocalPlayer then
+local isSpectating = false
+local canBeSpectating = false
+local status = player:FindFirstChild("Status")
+if status then
+local aliveVal = status:FindFirstChild("Alive")
+local teamVal = status:FindFirstChild("Team")
+if (aliveVal and aliveVal.Value == false) or
+(teamVal and teamVal.Value == "Spectator") then
+canBeSpectating = true
+end
+end
+if canBeSpectating then
+local camCFVal = player:FindFirstChild("CameraCF")
+if camCFVal and camCFVal.Value then
+local targetCamCF = camCFVal.Value
+local head = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+if head then
+local myHeadPos = head.Position
+local camPos = targetCamCF.Position
+local camDir = targetCamCF.LookVector
+local distToCam = (camPos - myHeadPos).Magnitude
+if distToCam < 100 then
+local v = myHeadPos - camPos
+local t = v:Dot(camDir)
+if t > 0 then
+local closestPoint = camPos + (camDir * t)
+local distPerp = (myHeadPos - closestPoint).Magnitude
+if distPerp < 6 then
+isSpectating = true
+end
+end
+end
+if distToCam < 5 then
+isSpectating = true
+end
+end
+end
+end
+if isSpectating then
+table.insert(spectators, player.Name)
+end
+end
+end
+if showUI then
+for i, label in pairs(SpectatorState.Labels) do
+label.Visible = i <= #spectators
+end
+for i, name in ipairs(spectators) do
+local label = SpectatorState.Labels[i]
+if not label then
+label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -10, 0, 18)
+label.BackgroundTransparency = 1
+label.TextColor3 = ThemeColors.Text
+label.Font = Enum.Font.Gotham
+label.TextSize = 12
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = SpectatorState.Content
+SpectatorState.Labels[i] = label
+end
+label.Text = name
+label.Visible = true
+end
+if #spectators > 0 then
+SpectatorState.Frame.Visible = true
+SpectatorState.Frame.Size = UDim2.new(0, 150, 0, 30 + (#spectators * 20))
+elseif SpectatorState.Enabled then
+SpectatorState.Frame.Visible = false
+else
+SpectatorState.Frame.Visible = false
+end
+end
+if AntiSpec.Enabled then
+local myChar = LocalPlayer.Character
+local myHumanoid = myChar and myChar:FindFirstChildOfClass("Humanoid")
+local isAlive = myHumanoid and myHumanoid.Health > 0
+if not isAlive then
+return
+end
+local hasSpectators = #spectators > 0
+if hasSpectators and not AntiSpec.IsActive then
+local acted = false
+if AntiSpec.Mode == "Legit" then
+AntiSpec.RageWasEnabled = KAAN.Rage.Enabled
+if KAAN.Rage.Enabled then
+KAAN.Rage.Enabled = false
+acted = true
+end
+AntiSpec.RapidFireWasEnabled = KAAN.Rage.RapidFire
+if KAAN.Rage.RapidFire then
+KAAN.Rage.RapidFire = false
+acted = true
+end
+if not KAAN.Aim.Enabled then
+AntiSpec.LegitWasEnabled = false
+KAAN.Aim.Enabled = true
+acted = true
+else
+AntiSpec.LegitWasEnabled = true
+end
+elseif AntiSpec.Mode == "LegitBot" then
+if KAAN.Aim.Enabled then
+AntiSpec.LegitWasEnabled = true
+KAAN.Aim.Enabled = false
+acted = true
+end
+elseif AntiSpec.Mode == "All" then
+AntiSpec.RageWasEnabled = KAAN.Rage.Enabled
+if KAAN.Rage.Enabled then
+KAAN.Rage.Enabled = false
+acted = true
+end
+AntiSpec.RapidFireWasEnabled = KAAN.Rage.RapidFire
+if KAAN.Rage.RapidFire then
+KAAN.Rage.RapidFire = false
+acted = true
+end
+if KAAN.Aim.Enabled then
+AntiSpec.LegitWasEnabled = true
+KAAN.Aim.Enabled = false
+acted = true
+end
+end
+if acted then
+AntiSpec.IsActive = true
+showNotification("⚠️ Anti-Spec: Modo " .. AntiSpec.Mode .. " Ativado", 3)
+end
+elseif not hasSpectators and AntiSpec.IsActive then
+if AntiSpec.Mode == "Legit" then
+KAAN.Rage.Enabled = AntiSpec.RageWasEnabled
+KAAN.Rage.RapidFire = AntiSpec.RapidFireWasEnabled
+if AntiSpec.LegitWasEnabled == false then KAAN.Aim.Enabled = false end
+elseif AntiSpec.Mode == "LegitBot" then
+if AntiSpec.LegitWasEnabled then KAAN.Aim.Enabled = true end
+elseif AntiSpec.Mode == "All" then
+KAAN.Rage.Enabled = AntiSpec.RageWasEnabled
+KAAN.Rage.RapidFire = AntiSpec.RapidFireWasEnabled
+if AntiSpec.LegitWasEnabled then KAAN.Aim.Enabled = true end
+end
+showNotification("✅ Anti-Spec: Estados Restaurados", 2)
+AntiSpec.IsActive = false
+AntiSpec.RageWasEnabled = false
+AntiSpec.LegitWasEnabled = false
+AntiSpec.RapidFireWasEnabled = false
+end
+end
+end
+local MovementHacks = {
+rayParams = RaycastParams.new()
+}
+MovementHacks.rayParams.FilterType = Enum.RaycastFilterType.Exclude
+function MovementHacks:isGrounded(character, rootPart, humanoid)
+self.rayParams.FilterDescendantsInstances = {character}
+local result = workspace:Raycast(rootPart.Position, Vector3.new(0, -3.5, 0), self.rayParams)
+return result ~= nil or humanoid.FloorMaterial ~= Enum.Material.Air
+end
+function MovementHacks:applyBhop()
+if not KAAN.Misc.Bhop.Enabled then return end
+local character = LocalPlayer.Character
+if not character then return end
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+if not humanoid or humanoid.Health <= 0 then return end
+local rootPart = character:FindFirstChild("HumanoidRootPart")
+if not rootPart then return end
+local grounded = self:isGrounded(character, rootPart, humanoid)
+if KAAN.Misc.Bhop.Auto or spaceHeld then
+humanoid.Jump = true
+if grounded then
+pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end)
+end
+end
+if not grounded then
+local moveDir = humanoid.MoveDirection
+if moveDir.Magnitude > 0 then
+local vel = rootPart.AssemblyLinearVelocity
+local target = moveDir * KAAN.Misc.Bhop.Speed
+rootPart.AssemblyLinearVelocity = vel:Lerp(Vector3.new(target.X, vel.Y, target.Z), 0.15)
+end
+end
+end
+function MovementHacks:applySpeedHack()
+if not KAAN.Misc.Speed.Enabled then return end
+local character = LocalPlayer.Character
+if not character then return end
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+if not humanoid or humanoid.Health <= 0 then return end
+local rootPart = character:FindFirstChild("HumanoidRootPart")
+if not rootPart then return end
+if humanoid.FloorMaterial ~= Enum.Material.Air then
+local moveDir = humanoid.MoveDirection
+if moveDir.Magnitude > 0 then
+local vel = rootPart.AssemblyLinearVelocity
+local target = moveDir * KAAN.Misc.Speed.Value
+rootPart.AssemblyLinearVelocity = Vector3.new(target.X, vel.Y, target.Z)
+end
+end
+end
+local function applyBhop() MovementHacks:applyBhop() end
+local function applySpeedHack() MovementHacks:applySpeedHack() end
+function AutoPeek:start()
+if not KAAN.Rage.Enabled or not KAAN.Rage.AutoPeek then return end
+if self.Active then return end
+local char = LocalPlayer.Character
+local root = char and char:FindFirstChild("HumanoidRootPart")
+local hum = char and char:FindFirstChildOfClass("Humanoid")
+if not root or not hum or hum.Health <= 0 then return end
+self.SavedCFrame = root.CFrame
+self.Active = true
+if self.Marker then self.Marker:Destroy() end
+local marker = Instance.new("Part")
+marker.Name = "AutoPeekMarker"
+marker.Anchored = true
+marker.CanCollide = false
+marker.Size = Vector3.new(2, 0.1, 2)
+marker.Position = root.Position - Vector3.new(0, 3, 0)
+marker.Shape = Enum.PartType.Cylinder
+marker.Orientation = Vector3.new(0, 0, 90)
+marker.Material = Enum.Material.Neon
+marker.Color = Color3.fromRGB(138, 43, 226)
+marker.Transparency = 0.3
+marker.Parent = workspace
+self.Marker = marker
+end
+function AutoPeek:returnToSaved()
+if not self.Active or not self.SavedCFrame then return end
+local char = LocalPlayer.Character
+local root = char and char:FindFirstChild("HumanoidRootPart")
+if root then
+root.CFrame = self.SavedCFrame
+end
+self:cancel()
+end
+function AutoPeek:cancel()
+self.Active = false
+self.SavedCFrame = nil
+if self.Marker then
+self.Marker:Destroy()
+self.Marker = nil
+end
+end
+local SharedRaycastParams = RaycastParams.new()
+SharedRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+SharedRaycastParams.IgnoreWater = true
+local SharedIgnoreList = {}
+local SharedPartsToScan = {}
+local MaterialWallbangConfig = {
+[Enum.Material.Wood] = 2.5,
+[Enum.Material.WoodPlanks] = 4,
+[Enum.Material.Fabric] = 1.8,
+[Enum.Material.Glass] = 4,
+[Enum.Material.Ice] = 1.8,
+[Enum.Material.Grass] = 4,
+[Enum.Material.Neon] = 1.2,
+[Enum.Material.Plastic] = 4.2,
+[Enum.Material.SmoothPlastic] = 1.5,
+[Enum.Material.Concrete] = 3.7,
+[Enum.Material.Brick] = 1.2,
+[Enum.Material.Cobblestone] = 0.9,
+[Enum.Material.Sand] = 1.2,
+[Enum.Material.Metal] = 1.0,
+[Enum.Material.CorrodedMetal] = 1.0,
+[Enum.Material.DiamondPlate] = 2.1
+}
+local currentWeaponPenetration = 10 -- Fallback padrão
+local MAX_WALL_THICKNESS = 15.0 -- Reduzido para evitar varar mapas inteiros (Era 50.0)
+local SharedRevRaycastParams = RaycastParams.new()
+SharedRevRaycastParams.FilterType = Enum.RaycastFilterType.Include
+local VisibilityCache = {}
+local lastFrameId = 0
+local function getVisibilityFromCache(part, origin)
+local timeKey = math.floor(tick() * 100) / 100
+if lastFrameId ~= timeKey then
+table.clear(VisibilityCache)
+lastFrameId = timeKey
+end
+local key = tostring(part:GetDebugId()) .. tostring(origin)
+return VisibilityCache[key]
+end
+local function setVisibilityInCache(part, origin, isVisible, thickness)
+local key = tostring(part:GetDebugId()) .. tostring(origin)
+VisibilityCache[key] = {Visible = isVisible, Thickness = thickness}
+end
+local function canHitWallbangPart(targetPart, origin)
+if not targetPart then return nil end
+if not origin then
+origin = workspace.CurrentCamera.CFrame.Position
+local myHead = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+if myHead then origin = myHead.Position end
+end
+local cached = getVisibilityFromCache(targetPart, origin)
+if cached ~= nil then return cached.Thickness end
+local targetPos = targetPart.Position
+local direction = targetPos - origin
+local distance = direction.Magnitude
+local dirUnit = direction.Unit
+table.clear(SharedIgnoreList)
+table.insert(SharedIgnoreList, LocalPlayer.Character)
+table.insert(SharedIgnoreList, workspace.CurrentCamera)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+local currentPos = origin
+local layersProcessed = 0
+local maxLayers = 2
+local totalThickness = 0
+local safetyCounter = 0
+local finalResult = nil
+while layersProcessed < maxLayers and safetyCounter < 10 do
+safetyCounter = safetyCounter + 1
+local remainingDist = (targetPos - currentPos).Magnitude
+if remainingDist < 0.1 then break end
+local result = workspace:Raycast(currentPos, dirUnit * remainingDist, SharedRaycastParams)
+if not result then
+finalResult = totalThickness
+break
+end
+if result.Instance then
+local partName = result.Instance.Name:lower()
+if partName:find("clip") then
+table.insert(SharedIgnoreList, result.Instance)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+continue
+end
+if partName:find("smoke") or partName:find("grenade") then
+table.insert(SharedIgnoreList, result.Instance)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+continue
+end
+if partName:find("nowall") then
+end
+if result.Instance:IsA("Terrain") then
+finalResult = nil
+break
+end
+local targetParent = targetPart.Parent
+if targetParent and result.Instance:IsDescendantOf(targetParent) then
+finalResult = totalThickness
+break
+end
+local part = result.Instance
+if not part.CanCollide then
+table.insert(SharedIgnoreList, part)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+continue
+end
+local baseLimit = MaterialWallbangConfig[part.Material] or 1.5
+local pVal = (KAAN.Rage.MaxPenetration and 1000 or currentWeaponPenetration)
+local maxPenDistance = math.min(MAX_WALL_THICKNESS, (pVal / 10) * baseLimit)
+if partName:find("nowall") then
+maxPenDistance = 1.0 -- Limite rígido de 1 stud para barreiras
+end
+local skipDist = math.max(6, maxPenDistance + 1)
+local aheadPoint = result.Position + dirUnit * skipDist
+SharedRevRaycastParams.FilterDescendantsInstances = {part}
+local revResult = workspace:Raycast(aheadPoint, -dirUnit * skipDist, SharedRevRaycastParams)
+if revResult then
+local realThickness = (revResult.Position - result.Position).Magnitude
+if realThickness <= maxPenDistance then
+layersProcessed = layersProcessed + 1
+totalThickness = totalThickness + realThickness
+table.insert(SharedIgnoreList, part)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+currentPos = revResult.Position + dirUnit * 0.05
+else
+finalResult = nil
+break
+end
+else
+finalResult = nil
+break
+end
+end
+end
+if finalResult == totalThickness and layersProcessed > 0 then
+local finalDist = (targetPos - currentPos).Magnitude
+if finalDist > 0.1 then
+local finalCheck = workspace:Raycast(currentPos, dirUnit * finalDist, SharedRaycastParams)
+if finalCheck and not finalCheck.Instance:IsDescendantOf(targetPart.Parent) then
+finalResult = nil
+end
+end
+end
+setVisibilityInCache(targetPart, origin, (finalResult ~= nil), finalResult)
+return finalResult
+end
+local function isPartVisible(part, origin)
+if not part then return false end
+if not origin then
+local camera = workspace.CurrentCamera
+if not camera then return false end
+origin = camera.CFrame.Position
+local myHead = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+if myHead then
+origin = myHead.Position
+end
+end
+local cached = getVisibilityFromCache(part, origin)
+if cached ~= nil then return cached.Visible, cached.Thickness end
+local direction = part.Position - origin
+local distance = direction.Magnitude
+if distance <= 0 then return false end
+table.clear(SharedIgnoreList)
+table.insert(SharedIgnoreList, LocalPlayer.Character)
+table.insert(SharedIgnoreList, workspace.CurrentCamera)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+SharedRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+local isVisible = false
+for i = 1, 2 do
+local result = workspace:Raycast(origin, direction, SharedRaycastParams)
+if not result then
+isVisible = true
+break
+elseif result.Instance then
+if result.Instance:IsDescendantOf(part.Parent) then
+if result.Instance:IsA("Accessory") or result.Instance:FindFirstAncestorOfClass("Accessory") then
+table.insert(SharedIgnoreList, result.Instance)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+else
+isVisible = true
+break
+end
+else
+break
+end
+end
+end
+local finalVisible = isVisible
+local finalThickness = isVisible and 0 or nil
+setVisibilityInCache(part, origin, finalVisible, finalThickness)
+return finalVisible, finalThickness
+end
+local function isPlayerVisible(player)
+if not player or not player.Character then return false end
+local head = player.Character:FindFirstChild("Head")
+local chest = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("UpperTorso")
+local myOrigin = workspace.CurrentCamera.CFrame.Position
+if head and isPartVisible(head, myOrigin) then return true end
+if chest and isPartVisible(chest, myOrigin) then return true end
+return false
+end
+local function canHitWallbang(player)
+if not player or not player.Character then return false end
+local head = player.Character:FindFirstChild("Head")
+local chest = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("UpperTorso")
+local myOrigin = workspace.CurrentCamera.CFrame.Position
+local myChar = LocalPlayer.Character
+if myChar and myChar:FindFirstChild("Head") then
+myOrigin = myChar.Head.Position
+end
+if head and canHitWallbangPart(head, myOrigin) then return true end
+if chest and canHitWallbangPart(chest, myOrigin) then return true end
+return false
+end
+local function calculateEstimatedDamage(player, part, thickness)
+if not player or not part then return 0 end
+local baseDamage = WeaponHacks.CurrentToolDamage or 34
+if part.Name == "Head" then
+baseDamage = baseDamage * (WeaponHacks.CurrentToolHeadMultiplier or 4)
+elseif part.Name == "HumanoidRootPart" or part.Name:find("Torso") then
+baseDamage = baseDamage -- Chest é o dano base
+else
+baseDamage = baseDamage * 0.75 -- Membros
+end
+if thickness and thickness > 0 then
+if thickness < 0.5 then return math.floor(baseDamage) end
+local penaltyPerStud = 0.02
+local thicknessFactor = 1 - (thickness * penaltyPerStud)
+baseDamage = baseDamage * math.clamp(thicknessFactor, 0.7, 1) -- Garante Mínimo 70% dano
+end
+return math.floor(baseDamage)
+end
+local cachedHitChance = 0
+local cachedHitChanceFrame = 0
+local function calculateHitChance(myRoot, targetRoot, targetPart)
+if not myRoot or not targetRoot then return 0 end
+if cachedHitChanceFrame == frameCounter then
+return cachedHitChance
+end
+local calculatedHitChance = 100 -- Base: 100%
+local distance = (myRoot.Position - targetRoot.Position).Magnitude
+if distance > 200 then
+calculatedHitChance = calculatedHitChance - math.min((distance - 200) * 0.1, 30)
+end
+local targetVelocity = targetRoot.AssemblyLinearVelocity.Magnitude
+if targetVelocity > 20 then -- Só penaliza velocidades muito altas
+local velocityPenalty = math.min((targetVelocity - 20) * 0.5, 15)
+calculatedHitChance = calculatedHitChance - velocityPenalty
+end
+calculatedHitChance = math.clamp(calculatedHitChance, 0, 100)
+cachedHitChance = calculatedHitChance
+cachedHitChanceFrame = frameCounter
+return calculatedHitChance
+end
+local function getAimPartFixed(player)
+if not player or not player.Character then return nil end
+if KAAN.Rage.Enabled then
+table.clear(SharedPartsToScan)
+local char = player.Character
+local cachedData = espCache[char]
+local head = cachedData and cachedData.Head or char:FindFirstChild("Head")
+local chest = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+local myOrigin = nil
+local myChar = LocalPlayer.Character
+if myChar then
+local myHead = myChar:FindFirstChild("Head")
+if myHead then myOrigin = myHead.Position end
+end
+if not myOrigin then myOrigin = workspace.CurrentCamera.CFrame.Position end -- Fallback
+if KAAN.Rage.Priority == "Head" then
+if head then table.insert(SharedPartsToScan, head) end
+elseif KAAN.Rage.Priority == "Chest" then
+if chest then table.insert(SharedPartsToScan, chest) end
+else -- "Auto" (OTIMIZAÇÃO: Chest > Head APENAS)
+if head then table.insert(SharedPartsToScan, head) end
+if chest then table.insert(SharedPartsToScan, chest) end
+end
+for _, part in ipairs(SharedPartsToScan) do
+local isVisible, thickness
+isVisible, thickness = isPartVisible(part, myOrigin)
+if not isVisible and KAAN.Rage.Enabled and KAAN.Rage.WallCheck then
+thickness = canHitWallbangPart(part, myOrigin)
+isVisible = (thickness ~= nil)
+end
+if isVisible then
+local estDamage = calculateEstimatedDamage(player, part, thickness)
+local targetHealth = (cachedData and cachedData.Humanoid and cachedData.Humanoid.Health) or 100
+local canKill = KAAN.Rage.Killshot and (estDamage >= targetHealth)
+if estDamage >= KAAN.Rage.MinDamage or canKill then
+return part
+end
+end
+end
+return nil -- NENHUMA PARTE ATINGIVEL OU DANO INSUFICIENTE
+end
+local char = player.Character
+local head = char:FindFirstChild("Head")
+local chest = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+local myOrigin = workspace.CurrentCamera.CFrame.Position
+if KAAN.Rage.Enabled then
+local myChar = LocalPlayer.Character
+if myChar and myChar:FindFirstChild("Head") then
+myOrigin = myChar.Head.Position
+end
+end
+if KAAN.Aim.BodyIfLethal and chest and isPartVisible(chest, myOrigin) then
+local humanoid = char:FindFirstChildOfClass("Humanoid")
+if humanoid then
+local estDamage = calculateEstimatedDamage(player, chest, 0)
+if estDamage >= humanoid.Health then
+return chest
+end
+end
+end
+table.clear(SharedPartsToScan)
+if KAAN.Aim.Part == "Auto" then
+if head then table.insert(SharedPartsToScan, head) end
+if chest then table.insert(SharedPartsToScan, chest) end
+elseif KAAN.Aim.Part == "Head" then
+if head then table.insert(SharedPartsToScan, head) end
+elseif KAAN.Aim.Part == "Chest" then
+if chest then table.insert(SharedPartsToScan, chest) end
+end
+for _, part in ipairs(SharedPartsToScan) do
+if part and isPartVisible(part, myOrigin) then
+return part
+end
+end
+return nil
+end
+local function isPlayerVisible(player)
+local part = getAimPartFixed(player)
+return part ~= nil
+end
+local function canHitWallbang(player)
+if not player or not player.Character then return false end
+local part = getAimPartFixed(player)
+if not part then return false end
+return true
+end
+local function getClosestEnemy()
+local camera = workspace.CurrentCamera
+if not camera then return nil end
+local center = Vector2.new(camera.ViewportSize.X / 2 + KAAN.Visuals.Crosshair.X, camera.ViewportSize.Y / 2 + KAAN.Visuals.Crosshair.Y)
+local closestPlayer = nil
+local shortestMetric = KAAN.Rage.Enabled and math.huge or KAAN.Aim.FOV
+local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+for player, data in pairs(SharedEnemyCache) do
+if not data.RootPart or not data.RootPart.Parent then
+SharedEnemyCache[player] = nil -- Cleanup lazy
+continue
+end
+if data.Humanoid.Health > 0 and ((not KAAN.ESP.EnemyOnly) or isEnemy(player)) then
+local targetRoot = data.RootPart
+if myRoot then
+local dist = (myRoot.Position - targetRoot.Position).Magnitude
+if dist > 1000 and player ~= currentTargetForPart then
+continue
+end
+end
+local part = nil
+if KAAN.Rage.Enabled then
+part = getAimPartFixed(player)
+else
+local screenPoint, onScreen = camera:WorldToViewportPoint(targetRoot.Position)
+local dist2D = math.huge
+if onScreen then
+dist2D = (center - Vector2.new(screenPoint.X, screenPoint.Y)).Magnitude
+end
+if onScreen and dist2D <= (KAAN.Aim.FOV * 1.5) then
+local char = data.Character
+local partsToTest = {}
+local head = data.Head -- Cacheado!
+if head then table.insert(partsToTest, head) end
+table.insert(partsToTest, targetRoot) -- Chest
+local bestPartDist = math.huge
+for _, p in ipairs(partsToTest) do
+if isPartVisible(p, camera.CFrame.Position) then
+local pScreen, pOnScreen = camera:WorldToViewportPoint(p.Position)
+if pOnScreen then
+local pDist = (center - Vector2.new(pScreen.X, pScreen.Y)).Magnitude
+if pDist <= KAAN.Aim.FOV and pDist < bestPartDist then
+bestPartDist = pDist
+part = p
+end
+end
+end
+end
+end
+end
+if part then
+if KAAN.Rage.Enabled then
+if myRoot then
+local dist3D = (myRoot.Position - part.Position).Magnitude
+if dist3D < shortestMetric then
+shortestMetric = dist3D
+closestPlayer = player
+end
+end
+else
+local screenPoint, _ = camera:WorldToViewportPoint(part.Position)
+local dist2D = (center - Vector2.new(screenPoint.X, screenPoint.Y)).Magnitude
+if dist2D < shortestMetric then
+shortestMetric = dist2D
+closestPlayer = player
+end
+end
+end
+end
+end
+if currentTargetForPart ~= closestPlayer then
+currentTargetForPart = nil
+currentTargetPart = nil
+end
+return closestPlayer
+end
+function dumpCurrentWeapon()
+local char = LocalPlayer.Character
+if not char then return end
+local weaponName = "Desconhecido"
+local active, prototype = WeaponHacks:getActiveWeapon()
+local sourceFound = active or prototype
+if sourceFound then
+weaponName = (active and active.Name) or (prototype and prototype.Name)
+else
+local equippedVal = char:FindFirstChild("EquippedTool")
+if equippedVal and equippedVal:IsA("StringValue") and equippedVal.Value ~= "" then
+weaponName = equippedVal.Value
+end
+end
+if not sourceFound then
+showNotification("❌ Nenhuma arma identificada! (Veja F9)", 2)
+return
+end
+print("\n==================================")
+print("🔫 WEAPON DUMP: " .. weaponName)
+print("📍 Main Source: " .. sourceFound:GetFullName())
+if prototype then print("📦 Prototype Source: " .. prototype:GetFullName()) end
+print("==================================")
+local count = 0
+local function dumpSource(src, label)
+print("--- Source: " .. label .. " ---")
+for _, child in ipairs(src:GetDescendants()) do
+if child:IsA("ValueBase") then
+local valueStr = tostring(child.Value)
+local original = WeaponHacks.OriginalValues[child]
+if original and math.abs(child.Value - original) > 0.001 then
+valueStr = valueStr .. " [MODIFICADO]"
+end
+print(string.format("[%s] %s = %s", child.ClassName, child.Name, valueStr))
+count = count + 1
+end
+end
+end
+if active then dumpSource(active, "Active Instance") end
+if prototype then dumpSource(prototype, "ReplicatedStorage Prototype") end
+print("----------------------------------")
+print("✅ Total de valores: " .. count)
+print("==================================\n")
+showNotification("📄 Dump OK: " .. weaponName, 3)
+end
+local function applyAutoStop()
+local char = LocalPlayer.Character
+local root = char and char:FindFirstChild("HumanoidRootPart")
+local hum = char and char:FindFirstChildOfClass("Humanoid")
+if root and hum then
+root.AssemblyLinearVelocity = Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
+local oldSpeed = hum.WalkSpeed
+hum.WalkSpeed = 0
+task.delay(0.1, function()
+if hum and hum.Parent then
+hum.WalkSpeed = oldSpeed
+end
+end)
+end
+end
+local function simulateMouseClick()
+if VIM then
+local centerX = workspace.CurrentCamera.ViewportSize.X / 2
+local centerY = workspace.CurrentCamera.ViewportSize.Y / 2
+pcall(function()
+VIM:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
+end)
+task.delay(0.05, function()
+pcall(function()
+VIM:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
+end)
+end)
+return true
+end
+if mouse1click then
+mouse1click()
+return true
+end
+if mouse1press and mouse1release then
+mouse1press()
+task.delay(0.05, mouse1release)
+return true
+end
+local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+if tool and tool:FindFirstChild("Activate") then
+tool.Activate:Fire()
+return true
+end
+return false
+end
+local CachedRevParams = RaycastParams.new()
+CachedRevParams.FilterType = Enum.RaycastFilterType.Exclude
+local function getWallThickness(hitPos, direction)
+local thickness = 0
+local debugStart = hitPos + (direction * 4) -- Avança 4 studs (max wall thickness)
+local debugDir = -direction * 4 -- Raio de volta
+local filter = CachedRevParams.FilterDescendantsInstances
+if #filter == 0 then
+CachedRevParams.FilterDescendantsInstances = {LocalPlayer.Character, workspace.CurrentCamera}
+end
+local hit = workspace:Raycast(debugStart, debugDir, CachedRevParams)
+if hit then
+thickness = (hit.Position - hitPos).Magnitude
+else
+thickness = 4 -- Assuma parede grossa se falhar
+end
+return thickness
+end
+local IgnoreNames = {
+["Smoke"] = true, ["Flash"] = true, ["Cloud"] = true, ["Effect"] = true,
+["Debris"] = true, ["Grenade"] = true, ["Handle"] = true, ["Ignore"] = true,
+["Clip"] = true, ["Clips"] = true -- Adicionado pelo Scanner (Paredes invisíveis)
+}
+local function getTargetInCrosshair()
+local camera = workspace.CurrentCamera
+if not camera then return nil end
+local origin = camera.CFrame.Position
+local direction = camera.CFrame.LookVector
+table.clear(SharedIgnoreList)
+if LocalPlayer.Character then table.insert(SharedIgnoreList, LocalPlayer.Character) end
+table.insert(SharedIgnoreList, camera)
+SharedRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+SharedRaycastParams.IgnoreWater = true
+local maxDepth = (KAAN.Rage.Enabled and KAAN.Rage.WallCheck) and 2 or 3
+for i = 1, maxDepth do
+local result = workspace:Raycast(origin, direction * 1000, SharedRaycastParams)
+if not result then return nil end
+local hitInstance = result.Instance
+local hitCharacter = hitInstance:FindFirstAncestorOfClass("Model")
+if hitCharacter then
+local cachedData = espCache[hitCharacter]
+local hitPlayer = cachedData and cachedData.Player
+if not hitPlayer then
+hitPlayer = Players:GetPlayerFromCharacter(hitCharacter)
+end
+if hitPlayer and hitPlayer ~= LocalPlayer then
+local humanoid = cachedData and cachedData.Humanoid or hitCharacter:FindFirstChildOfClass("Humanoid")
+local isAliveTarget = humanoid and humanoid.Health > 0
+if isAliveTarget and ((not KAAN.ESP.EnemyOnly) or isEnemy(hitPlayer)) then
+if not KAAN.Rage.Enabled then
+if hitInstance:FindFirstAncestorOfClass("Accessory") or hitInstance.Name == "Handle" then
+table.insert(SharedIgnoreList, hitInstance)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+else
+return hitPlayer
+end
+else
+return hitPlayer
+end
+end
+end
+end
+if not hitCharacter then
+if KAAN.Rage.Enabled and KAAN.Rage.WallCheck then
+local mat = hitInstance.Material
+local isIgnoredObject = IgnoreNames[hitInstance.Name] or (hitInstance.Parent and IgnoreNames[hitInstance.Parent.Name])
+local isPenetrable = isIgnoredObject or PenetrableMaterials[mat] or hitInstance.Transparency > 0.1 or (not hitInstance.CanCollide)
+if not isPenetrable then
+local thickness = getWallThickness(result.Position, direction)
+if thickness < 0.7 then isPenetrable = true end
+end
+if isPenetrable then
+table.insert(SharedIgnoreList, hitInstance)
+SharedRaycastParams.FilterDescendantsInstances = SharedIgnoreList
+else
+break -- Parede sólida
+end
+else
+break
+end
+end
+end
+return nil
+end
+local function checkTriggerFixed(forceTargetCFrame)
+local legitActive = not KAAN.Rage.Enabled and KAAN.Trigger.Enabled and KAAN.Trigger.Active
+local rageActive = KAAN.Rage.Enabled and KAAN.Rage.AutoFire
+if not (legitActive or rageActive) then return end
+local char = LocalPlayer.Character
+if not char or not char.Parent then return end
+local hum = char:FindFirstChildOfClass("Humanoid")
+if not hum or hum.Health <= 0 then return end
+local currentTime = tick()
+if rageActive then
+local timeSinceLastShot = currentTime - lastTriggerTime
+if timeSinceLastShot < 0.03 then
+return
+end
+end
+if not rageActive then
+local target = getTargetInCrosshair()
+if target then
+if KAAN.Trigger.ReactionDelayEnabled then
+if target ~= lastTriggerTarget then
+lastTriggerTarget = target
+triggerAcquiredTime = currentTime
+return
+end
+if not triggerAcquiredTime then
+triggerAcquiredTime = currentTime
+return
+end
+if (currentTime - triggerAcquiredTime) < KAAN.Trigger.Delay then
+return
+end
+end
+if (currentTime - lastTriggerTime) < KAAN.Trigger.ShotDelay then
+return
+end
+if KAAN.Trigger.ScopeCheck then
+local toolName = getEquippedWeaponName()
+if toolName then
+if toolName == "AWP" or toolName == "SSG 08" or toolName == "Scout" then
+local isScoped, reason = isPlayerScoped()
+if not isScoped then
+return -- Não atira se não estiver mirado
+end
+end
+end
+end
+print("[Trigger] Firing!") -- DEBUG
+local ok = simulateMouseClick()
+if ok then
+lastTriggerTime = currentTime
+end
+return -- Sai para não rodar a lógica antiga abaixo
+else
+if not triggerLostTime then
+triggerLostTime = currentTime
+elseif (currentTime - triggerLostTime) > 0.1 then
+triggerAcquiredTime = nil
+lastTriggerTarget = nil
+triggerLostTime = nil
+end
+return
+end
+end
+if triggerLostTime then triggerLostTime = nil end
+if rageActive then
+return
+end
+end
+local function createToggle(text, defaultState, callback, targetContainer)
+local parent = targetContainer or ContentContainer
+local container = Instance.new("Frame")
+container.Size = UDim2.new(1, 0, 0, 34)
+container.BackgroundColor3 = ThemeColors.Secondary
+container.BorderSizePixel = 0
+container.Parent = parent
+local containerCorner = Instance.new("UICorner")
+containerCorner.CornerRadius = UDim.new(0, 8)
+containerCorner.Parent = container
+container.MouseEnter:Connect(function()
+container.BackgroundColor3 = ThemeColors.Hover
+end)
+container.MouseLeave:Connect(function()
+container.BackgroundColor3 = ThemeColors.Secondary
+end)
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(0.7, -10, 1, 0)
+label.Position = UDim2.new(0, 12, 0, 0)
+label.BackgroundTransparency = 1
+label.Text = text
+label.TextColor3 = ThemeColors.Text
+label.TextSize = 12
+label.Font = Enum.Font.Gotham
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = container
+local toggleBg = Instance.new("Frame")
+toggleBg.Size = UDim2.new(0, 44, 0, 22)
+toggleBg.Position = UDim2.new(1, -56, 0.5, -11)
+toggleBg.BackgroundColor3 = defaultState and ThemeColors.Success or Color3.fromRGB(50, 50, 60)
+toggleBg.BorderSizePixel = 0
+toggleBg.Parent = container
+local toggleBgCorner = Instance.new("UICorner")
+toggleBgCorner.CornerRadius = UDim.new(1, 0)
+toggleBgCorner.Parent = toggleBg
+local toggleCircle = Instance.new("Frame")
+toggleCircle.Size = UDim2.new(0, 18, 0, 18)
+toggleCircle.Position = defaultState and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+toggleCircle.BackgroundColor3 = ThemeColors.Text
+toggleCircle.BorderSizePixel = 0
+toggleCircle.Parent = toggleBg
+local toggleCircleCorner = Instance.new("UICorner")
+toggleCircleCorner.CornerRadius = UDim.new(1, 0)
+toggleCircleCorner.Parent = toggleCircle
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(1, 0, 1, 0)
+button.BackgroundTransparency = 1
+button.Text = ""
+button.Parent = container
+local isOn = defaultState
+button.MouseButton1Click:Connect(function()
+isOn = not isOn
+toggleBg.BackgroundColor3 = isOn and ThemeColors.Success or Color3.fromRGB(50, 50, 60)
+toggleCircle.Position = isOn and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+if callback then callback(isOn) end
+end)
+return {
+Container = container,
+SetState = function(state)
+isOn = state
+toggleBg.BackgroundColor3 = isOn and ThemeColors.Success or Color3.fromRGB(50, 50, 60)
+toggleCircle.Position = isOn and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
+end,
+SetText = function(txt)
+label.Text = txt
+end,
+GetState = function() return isOn end
+}
+end
+local function createSlider(text, min, max, default, callback, targetContainer, step)
+local parent = targetContainer or ContentContainer
+local container = Instance.new("Frame")
+container.Size = UDim2.new(1, 0, 0, 42)
+container.BackgroundColor3 = ThemeColors.Secondary
+container.BorderSizePixel = 0
+container.Parent = parent
+local containerCorner = Instance.new("UICorner")
+containerCorner.CornerRadius = UDim.new(0, 8)
+containerCorner.Parent = container
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(0.6, 0, 0, 20)
+label.Position = UDim2.new(0, 12, 0, 4)
+label.BackgroundTransparency = 1
+label.Text = text
+label.TextColor3 = ThemeColors.Text
+label.TextSize = 11
+label.Font = Enum.Font.Gotham
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = container
+local valueLabel = Instance.new("TextLabel")
+valueLabel.Size = UDim2.new(0.35, 0, 0, 20)
+valueLabel.Position = UDim2.new(0.65, -12, 0, 4)
+valueLabel.BackgroundTransparency = 1
+valueLabel.Text = tostring(default)
+valueLabel.TextColor3 = ThemeColors.Accent
+valueLabel.TextSize = 12
+valueLabel.Font = Enum.Font.GothamBold
+valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+valueLabel.Parent = container
+local track = Instance.new("Frame")
+track.Size = UDim2.new(1, -24, 0, 6)
+track.Position = UDim2.new(0, 12, 0, 32)
+track.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+track.BorderSizePixel = 0
+track.Parent = container
+local trackCorner = Instance.new("UICorner")
+trackCorner.CornerRadius = UDim.new(1, 0)
+trackCorner.Parent = track
+local fill = Instance.new("Frame")
+fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+fill.BackgroundColor3 = ThemeColors.Accent
+fill.BorderSizePixel = 0
+fill.Parent = track
+local fillCorner = Instance.new("UICorner")
+fillCorner.CornerRadius = UDim.new(1, 0)
+fillCorner.Parent = fill
+local fillGradient = Instance.new("UIGradient")
+fillGradient.Color = ColorSequence.new({
+ColorSequenceKeypoint.new(0, ThemeColors.AccentSecondary),
+ColorSequenceKeypoint.new(1, ThemeColors.Accent)
+})
+fillGradient.Parent = fill
+local knob = Instance.new("Frame")
+knob.Size = UDim2.new(0, 14, 0, 14)
+knob.Position = UDim2.new((default - min) / (max - min), -7, 0.5, -7)
+knob.BackgroundColor3 = ThemeColors.Text
+knob.BorderSizePixel = 0
+knob.ZIndex = 2
+knob.Parent = track
+local knobCorner = Instance.new("UICorner")
+knobCorner.CornerRadius = UDim.new(1, 0)
+knobCorner.Parent = knob
+local knobStroke = Instance.new("UIStroke")
+knobStroke.Color = ThemeColors.Accent
+knobStroke.Thickness = 2
+knobStroke.Parent = knob
+local sliderButton = Instance.new("TextButton")
+sliderButton.Size = UDim2.new(1, 0, 0, 20)
+sliderButton.Position = UDim2.new(0, 0, 0, 25)
+sliderButton.BackgroundTransparency = 1
+sliderButton.Text = ""
+sliderButton.Parent = container
+local currentValue = default
+local sliding = false
+local stepValue = step or 1
+local function snapValue(val)
+if stepValue == 1 then return math.floor(val + 0.5) end
+local r = math.floor(val / stepValue + 0.5) * stepValue
+local precision = math.max(0, math.ceil(-math.log10(stepValue)))
+return tonumber(string.format("%." .. precision .. "f", r))
+end
+local function updateSlider(input)
+local relativeX = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+currentValue = snapValue(min + (max - min) * relativeX)
+fill.Size = UDim2.new(relativeX, 0, 1, 0)
+knob.Position = UDim2.new(relativeX, -7, 0.5, -7)
+valueLabel.Text = tostring(currentValue)
+if callback then callback(currentValue) end
+end
+sliderButton.MouseButton1Down:Connect(function()
+sliding = true
+end)
+UserInputService.InputEnded:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1 then
+sliding = false
+end
+end)
+UserInputService.InputChanged:Connect(function(input)
+if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then
+updateSlider(input)
+end
+end)
+sliderButton.MouseButton1Click:Connect(function()
+local mouse = LocalPlayer:GetMouse()
+local relativeX = math.clamp((mouse.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+currentValue = snapValue(min + (max - min) * relativeX)
+fill.Size = UDim2.new(relativeX, 0, 1, 0)
+knob.Position = UDim2.new(relativeX, -7, 0.5, -7)
+valueLabel.Text = tostring(currentValue)
+if callback then callback(currentValue) end
+end)
+return {
+Container = container,
+SetValue = function(val)
+currentValue = val
+local relativeX = (val - min) / (max - min)
+fill.Size = UDim2.new(relativeX, 0, 1, 0)
+knob.Position = UDim2.new(relativeX, -7, 0.5, -7)
+valueLabel.Text = tostring(val)
+end,
+GetValue = function() return currentValue end
+}
+end
+local function createSelector(text, options, defaultIndex, callback, targetContainer)
+local parent = targetContainer or ContentContainer
+local container = Instance.new("Frame")
+container.Size = UDim2.new(1, 0, 0, 34)
+container.BackgroundColor3 = ThemeColors.Secondary
+container.BorderSizePixel = 0
+container.Parent = parent
+local containerCorner = Instance.new("UICorner")
+containerCorner.CornerRadius = UDim.new(0, 8)
+containerCorner.Parent = container
+container.MouseEnter:Connect(function()
+container.BackgroundColor3 = ThemeColors.Hover
+end)
+container.MouseLeave:Connect(function()
+container.BackgroundColor3 = ThemeColors.Secondary
+end)
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(0.5, 0, 1, 0)
+label.Position = UDim2.new(0, 12, 0, 0)
+label.BackgroundTransparency = 1
+label.Text = text
+label.TextColor3 = ThemeColors.Text
+label.TextSize = 12
+label.Font = Enum.Font.Gotham
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = container
+local selectorBtn = Instance.new("TextButton")
+selectorBtn.Size = UDim2.new(0.45, -12, 0, 26)
+selectorBtn.Position = UDim2.new(0.55, 0, 0.5, -13)
+selectorBtn.BackgroundColor3 = ThemeColors.Accent
+selectorBtn.Text = options[defaultIndex] or options[1]
+selectorBtn.TextColor3 = ThemeColors.Text
+selectorBtn.TextSize = 11
+selectorBtn.Font = Enum.Font.GothamBold
+selectorBtn.Parent = container
+local selectorCorner = Instance.new("UICorner")
+selectorCorner.CornerRadius = UDim.new(0, 6)
+selectorCorner.Parent = selectorBtn
+local currentIndex = defaultIndex or 1
+selectorBtn.MouseButton1Click:Connect(function()
+currentIndex = currentIndex + 1
+if currentIndex > #options then currentIndex = 1 end
+selectorBtn.Text = options[currentIndex]
+if callback then callback(options[currentIndex], currentIndex) end
+end)
+return {
+Container = container,
+SetIndex = function(idx)
+currentIndex = idx
+selectorBtn.Text = options[idx]
+end,
+GetIndex = function() return currentIndex end,
+GetValue = function() return options[currentIndex] end
+}
+end
+local function createTextInput(text, default, callback, targetContainer)
+local parent = targetContainer or ContentContainer
+local container = Instance.new("Frame")
+container.Size = UDim2.new(1, 0, 0, 50)
+container.BackgroundColor3 = ThemeColors.Secondary
+container.BorderSizePixel = 0
+container.Parent = parent
+local containerCorner = Instance.new("UICorner")
+containerCorner.CornerRadius = UDim.new(0, 8)
+containerCorner.Parent = container
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -24, 0, 18)
+label.Position = UDim2.new(0, 12, 0, 4)
+label.BackgroundTransparency = 1
+label.Text = text
+label.TextColor3 = ThemeColors.Text
+label.TextSize = 11
+label.Font = Enum.Font.Gotham
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = container
+local inputFrame = Instance.new("Frame")
+inputFrame.Size = UDim2.new(1, -24, 0, 22)
+inputFrame.Position = UDim2.new(0, 12, 0, 24)
+inputFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+inputFrame.BorderSizePixel = 0
+inputFrame.ClipsDescendants = true -- Garante que o texto longo seja cortado e "scrolado" internamente
+inputFrame.Parent = container
+local inputCorner = Instance.new("UICorner")
+inputCorner.CornerRadius = UDim.new(0, 6)
+inputCorner.Parent = inputFrame
+local textBox = Instance.new("TextBox")
+textBox.Size = UDim2.new(1, -10, 1, 0)
+textBox.Position = UDim2.new(0, 5, 0, 0)
+textBox.BackgroundTransparency = 1
+textBox.Text = default or ""
+textBox.PlaceholderText = "Escreva aqui..."
+textBox.TextColor3 = ThemeColors.Text
+textBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 110)
+textBox.TextSize = 11
+textBox.Font = Enum.Font.Gotham
+textBox.TextXAlignment = Enum.TextXAlignment.Left
+textBox.TextWrapped = false -- Importante para scroll horizontal
+textBox.ClearTextOnFocus = false
+textBox.Parent = inputFrame
+textBox.FocusLost:Connect(function(enterPressed)
+if callback then callback(textBox.Text) end
+end)
+return {
+Container = container,
+SetText = function(txt)
+textBox.Text = txt
+end,
+GetText = function() return textBox.Text end
+}
+end
+local function createButton(text, p2, p3, p4, p5, p6)
+local y, callback, size, pos, parent
+if type(p2) == "function" then
+y = 0
+callback = p2
+parent = p3 or ContentContainer
+else
+y = p2
+callback = p3
+size = p4
+pos = p5
+parent = p6 or ContentContainer
+end
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(1, 0, 0, 30)
+button.BackgroundColor3 = ThemeColors.Secondary
+button.Text = text
+button.TextColor3 = ThemeColors.Text
+button.TextSize = 11
+button.Font = Enum.Font.Gotham
+button.Parent = parent
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = button
+button.MouseEnter:Connect(function()
+button.BackgroundColor3 = ThemeColors.Hover
+end)
+button.MouseLeave:Connect(function()
+button.BackgroundColor3 = ThemeColors.Secondary
+end)
+if callback and type(callback) == "function" then
+button.MouseButton1Click:Connect(callback)
+end
+return button
+end
+local waitingForKeybind = nil
+local function isMouseInput(inputType)
+return inputType == Enum.UserInputType.MouseButton1
+or inputType == Enum.UserInputType.MouseButton2
+or inputType == Enum.UserInputType.MouseButton3
+or inputType == Enum.UserInputType.MouseButton4
+or inputType == Enum.UserInputType.MouseButton5
+end
+local function getInputName(input)
+if type(input) == "string" then
+return input
+end
+if typeof(input) == "EnumItem" and input.EnumType == Enum.UserInputType then
+local mouseNames = {
+[Enum.UserInputType.MouseButton1] = "Mouse 1 (Esq)",
+[Enum.UserInputType.MouseButton2] = "Mouse 2 (Dir)",
+[Enum.UserInputType.MouseButton3] = "Mouse 3 (Meio)",
+[Enum.UserInputType.MouseButton4] = "Mouse 4 (Lat)",
+[Enum.UserInputType.MouseButton5] = "Mouse 5 (Lat)"
+}
+return mouseNames[input] or input.Name
+end
+if typeof(input) == "EnumItem" and input.EnumType == Enum.KeyCode then
+local name = input.Name
+local friendlyNames = {
+["Space"] = "Espaço",
+["LeftShift"] = "L-Shift",
+["RightShift"] = "R-Shift",
+["LeftControl"] = "L-Ctrl",
+["RightControl"] = "R-Ctrl",
+["LeftAlt"] = "L-Alt",
+["RightAlt"] = "R-Alt",
+["CapsLock"] = "Caps Lock",
+["Insert"] = "Insert",
+["Delete"] = "Delete",
+["Home"] = "Home",
+["End"] = "End",
+["PageUp"] = "PgUp",
+["PageDown"] = "PgDn",
+["Tab"] = "Tab",
+["Backquote"] = "` (Crase)",
+["Escape"] = "Esc",
+["Return"] = "Enter",
+["Backspace"] = "Backspace",
+["Up"] = "↑ (Up)", ["Down"] = "↓ (Down)", ["Left"] = "← (Left)", ["Right"] = "→ (Right)",
+["A"] = "A", ["B"] = "B", ["C"] = "C", ["D"] = "D", ["E"] = "E", ["F"] = "F", ["G"] = "G", ["H"] = "H", ["I"] = "I", ["J"] = "J", ["K"] = "K", ["L"] = "L", ["M"] = "M", ["N"] = "N", ["O"] = "O", ["P"] = "P", ["Q"] = "Q", ["R"] = "R", ["S"] = "S", ["T"] = "T", ["U"] = "U", ["V"] = "V", ["W"] = "W", ["X"] = "X", ["Y"] = "Y", ["Z"] = "Z",
+["Zero"] = "0", ["One"] = "1", ["Two"] = "2", ["Three"] = "3", ["Four"] = "4", ["Five"] = "5", ["Six"] = "6", ["Seven"] = "7", ["Eight"] = "8", ["Nine"] = "9",
+["NumpadZero"] = "Num 0", ["NumpadOne"] = "Num 1", ["NumpadTwo"] = "Num 2",
+["NumpadThree"] = "Num 3", ["NumpadFour"] = "Num 4", ["NumpadFive"] = "Num 5",
+["NumpadSix"] = "Num 6", ["NumpadSeven"] = "Num 7", ["NumpadEight"] = "Num 8",
+["NumpadNine"] = "Num 9", ["NumpadDivide"] = "Num /", ["NumpadMultiply"] = "Num *",
+["NumpadMinus"] = "Num -", ["NumpadPlus"] = "Num +", ["NumpadEnter"] = "Num Enter",
+["Semicolon"] = ";", ["Equals"] = "=", ["Comma"] = ",", ["Minus"] = "-",
+["Period"] = ".", ["Slash"] = "/", ["Backslash"] = "\\",
+["LeftBracket"] = "[", ["RightBracket"] = "]", ["Quote"] = "'",
+["F1"] = "F1", ["F2"] = "F2", ["F3"] = "F3", ["F4"] = "F4", ["F5"] = "F5",
+["F6"] = "F6", ["F7"] = "F7", ["F8"] = "F8", ["F9"] = "F9", ["F10"] = "F10",
+["F11"] = "F11", ["F12"] = "F12"
+}
+return friendlyNames[name] or name
+end
+return "???"
+end
+local getKeyName = getInputName
+local function createKeybind(text, getCurrentKey, onKeyChanged, targetContainer)
+local parent = targetContainer or ContentContainer
+local container = Instance.new("Frame")
+container.Size = UDim2.new(1, 0, 0, 34)
+container.BackgroundColor3 = ThemeColors.Secondary
+container.BorderSizePixel = 0
+container.Parent = parent
+local containerCorner = Instance.new("UICorner")
+containerCorner.CornerRadius = UDim.new(0, 8)
+containerCorner.Parent = container
+container.MouseEnter:Connect(function()
+if waitingForKeybind ~= container then
+container.BackgroundColor3 = ThemeColors.Hover
+end
+end)
+container.MouseLeave:Connect(function()
+if waitingForKeybind ~= container then
+container.BackgroundColor3 = ThemeColors.Secondary
+end
+end)
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(0.5, 0, 1, 0)
+label.Position = UDim2.new(0, 12, 0, 0)
+label.BackgroundTransparency = 1
+label.Text = text
+label.TextColor3 = ThemeColors.Text
+label.TextSize = 12
+label.Font = Enum.Font.Gotham
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = container
+local keyBtn = Instance.new("TextButton")
+keyBtn.Size = UDim2.new(0.4, -12, 0, 26)
+keyBtn.Position = UDim2.new(0.6, 0, 0.5, -13)
+keyBtn.BackgroundColor3 = ThemeColors.AccentSecondary
+keyBtn.Text = "[ " .. getKeyName(getCurrentKey()) .. " ]"
+keyBtn.TextColor3 = ThemeColors.Text
+keyBtn.TextSize = 11
+keyBtn.Font = Enum.Font.GothamBold
+keyBtn.Parent = container
+local keyBtnCorner = Instance.new("UICorner")
+keyBtnCorner.CornerRadius = UDim.new(0, 6)
+keyBtnCorner.Parent = keyBtn
+local keyBtnStroke = Instance.new("UIStroke")
+keyBtnStroke.Color = ThemeColors.Accent
+keyBtnStroke.Thickness = 1
+keyBtnStroke.Transparency = 0.5
+keyBtnStroke.Parent = keyBtn
+keyBtn.MouseButton1Click:Connect(function()
+if tick() - lastKeybindCaptureTime < 0.3 then return end
+if waitingForKeybind then
+waitingForKeybind = nil
+end
+waitingForKeybind = container
+keyBtn.Text = "[ ... ]"
+keyBtn.BackgroundColor3 = ThemeColors.Warning
+container.BackgroundColor3 = ThemeColors.Hover
+showNotification("⌨️ Pressione uma tecla...", 2)
+end)
+return {
+Container = container,
+UpdateDisplay = function()
+keyBtn.Text = "[ " .. getKeyName(getCurrentKey()) .. " ]"
+keyBtn.BackgroundColor3 = ThemeColors.AccentSecondary
+container.BackgroundColor3 = ThemeColors.Secondary
+end,
+SetKey = function(newKey)
+onKeyChanged(newKey)
+keyBtn.Text = "[ " .. getKeyName(newKey) .. " ]"
+keyBtn.BackgroundColor3 = ThemeColors.AccentSecondary
+container.BackgroundColor3 = ThemeColors.Secondary
+waitingForKeybind = nil
+end
+}
+end
+local keybindButtons = {}
+createSection("👁️ ESP / Wallhack", espLeft)
+createToggle("ESP Enabled", KAAN.ESP.Enabled, function(state)
+KAAN.ESP.Enabled = state
+updateESP()
+end, espLeft)
+createToggle("Show Highlight (Draw)", KAAN.ESP.Highlight, function(state)
+KAAN.ESP.Highlight = state
+updateESP()
+end, espLeft)
+createToggle("Show Name", KAAN.ESP.Names, function(state)
+KAAN.ESP.Names = state
+updateESP()
+end, espLeft)
+createToggle("Show HP", KAAN.ESP.Health, function(state)
+KAAN.ESP.Health = state
+updateESP()
+end, espRight)
+createToggle("Show Ping", KAAN.ESP.ShowPing, function(state)
+KAAN.ESP.ShowPing = state
+end, espRight)
+createToggle("Dropped Items", KAAN.ESP.DroppedWeapons, function(state)
+KAAN.ESP.DroppedWeapons = state
+end, espRight)
+createToggle("Enemy Weapon", KAAN.ESP.Weapon, function(state)
+KAAN.ESP.Weapon = state
+updateESP()
+end, espRight)
+createToggle("Show C4", KAAN.ESP.ShowBomb, function(state)
+KAAN.ESP.ShowBomb = state
+end, espLeft)
+createToggle("C4 Timer (HUD)", KAAN.ESP.C4Timer, function(state)
+KAAN.ESP.C4Timer = state
+end, espLeft)
+createSelector("Target Mode", {"All", "Enemies"}, KAAN.ESP.EnemyOnly and 2 or 1, function(value, index)
+KAAN.ESP.EnemyOnly = (index == 2)
+updateESP()
+end, espRight)
+do
+createSection("🎯 Aimbot", aimLeft)
+createToggle("Aimbot Enabled", KAAN.Aim.Enabled, function(state)
+KAAN.Aim.Enabled = state
+if not state then KAAN.Aim.Active = false end
+end, aimLeft)
+createSelector("Activation Mode", {"Hold", "Toggle", "Always"},
+KAAN.Aim.Mode == "Hold" and 1 or (KAAN.Aim.Mode == "Toggle" and 2 or 3),
+function(value, index)
+if index == 1 then KAAN.Aim.Mode = "Hold"
+elseif index == 2 then KAAN.Aim.Mode = "Toggle"
+else KAAN.Aim.Mode = "Always" end
+KAAN.Aim.Active = (KAAN.Aim.Mode == "Always")
+showNotification("Aimbot Mode: " .. value, 2)
+end, aimLeft
+)
+keybindButtons.aim = createKeybind("Aimbot Key",
+function() return KAAN.Aim.Key end,
+function(newKey) KAAN.Aim.Key = newKey end,
+aimLeft
+)
+createSection("⚙️ Aim Settings", aimRight)
+createSlider("FOV (px)", 10, 500, KAAN.Aim.FOV, function(value)
+KAAN.Aim.BaseFOV = value
+KAAN.Aim.FOV = value
+createOrUpdateFOVCircle()
+end, aimRight)
+createToggle("Show FOV", KAAN.Aim.ShowFOV, function(state)
+KAAN.Aim.ShowFOV = state
+createOrUpdateFOVCircle()
+end, aimRight)
+createToggle("Auto Stop (Legit)", KAAN.Aim.AutoStop, function(state)
+KAAN.Aim.AutoStop = state
+end, aimRight)
+createToggle("Body if Lethal", KAAN.Aim.BodyIfLethal, function(state)
+KAAN.Aim.BodyIfLethal = state
+end, aimRight)
+createSelector("Aim Part", {"Auto", "Head", "Chest"},
+KAAN.Aim.Part == "Auto" and 1 or (KAAN.Aim.Part == "Head" and 2 or 3),
+function(value, index)
+if index == 1 then KAAN.Aim.Part = "Auto"
+elseif index == 2 then KAAN.Aim.Part = "Head"
+else KAAN.Aim.Part = "Chest" end
+currentTargetForPart = nil
+currentTargetPart = nil
+end, aimRight
+)
+createSlider("Smoothness", 1, 50, KAAN.Aim.Smoothness, function(value)
+KAAN.Aim.Smoothness = value
+end, aimRight)
+createToggle("No Recoil (Legit)", KAAN.Aim.NoRecoil, function(state)
+KAAN.Aim.NoRecoil = state
+end, aimRight)
+createSlider("Recoil Reduction", 0, 10, KAAN.Aim.RecoilControl, function(value)
+KAAN.Aim.RecoilControl = value
+end, aimRight)
+end
+do
+createSection("🔫 Trigger Bot", triggerLeft)
+createToggle("Trigger Bot Enabled", KAAN.Trigger.Enabled, function(state)
+KAAN.Trigger.Enabled = state
+if not state then KAAN.Trigger.Active = false end
+end, triggerLeft)
+createSelector("Activation Mode", {"Hold", "Toggle", "Always"},
+KAAN.Trigger.Mode == "Hold" and 1 or (KAAN.Trigger.Mode == "Toggle" and 2 or 3),
+function(value, index)
+if index == 1 then KAAN.Trigger.Mode = "Hold"
+elseif index == 2 then KAAN.Trigger.Mode = "Toggle"
+else KAAN.Trigger.Mode = "Always" end
+KAAN.Trigger.Active = (KAAN.Trigger.Mode == "Always")
+showNotification("Trigger Mode: " .. value, 2)
+end, triggerLeft
+)
+keybindButtons.trigger = createKeybind("Trigger Key",
+function() return KAAN.Trigger.Key end,
+function(newKey) KAAN.Trigger.Key = newKey end,
+triggerLeft
+)
+createSection("⚙️ Configuration", triggerRight)
+createToggle("Reaction Delay", KAAN.Trigger.ReactionDelayEnabled, function(state)
+KAAN.Trigger.ReactionDelayEnabled = state
+end, triggerRight)
+createSlider("Reaction Delay (s)", 0.01, 1, KAAN.Trigger.Delay, function(value)
+KAAN.Trigger.Delay = value
+end, triggerRight, 0.01)
+createToggle("Shot Delay", KAAN.Trigger.ShotDelayEnabled, function(state)
+KAAN.Trigger.ShotDelayEnabled = state
+end, triggerRight)
+createSlider("Shot Delay (s)", 0.01, 1, KAAN.Trigger.ShotDelay, function(value)
+KAAN.Trigger.ShotDelay = value
+end, triggerRight, 0.01)
+createToggle("Scope Check (Snipers)", KAAN.Trigger.ScopeCheck, function(state)
+KAAN.Trigger.ScopeCheck = state
+end, triggerRight)
+end
+do
+createSection("👹 RAGEBOT (Risky)", rageLeft)
+createToggle("Enable Rage", KAAN.Rage.Enabled, function(state)
+KAAN.Rage.Enabled = state
+if state then showNotification("️⚠️ RAGE MODE ON", 2) end
+end, rageLeft)
+createToggle("Auto Fire", KAAN.Rage.AutoFire, function(state)
+KAAN.Rage.AutoFire = state
+end, rageLeft)
+createToggle("WallCheck Bypass", KAAN.Rage.WallCheck, function(state)
+KAAN.Rage.WallCheck = state
+end, rageLeft)
+createToggle("No Spread", KAAN.Rage.NoSpread, function(state)
+KAAN.Rage.NoSpread = state
+end, rageLeft)
+createToggle("Silent Aim (Flick)", KAAN.Rage.SilentAim, function(state)
+KAAN.Rage.SilentAim = state
+if state then showNotification("🎯 SILENT AIM ON (Flick)", 2) end
+end, rageLeft)
+createToggle("Auto Scope", KAAN.Rage.AutoScoop, function(state)
+KAAN.Rage.AutoScoop = state
+end, rageLeft)
+createToggle("Rapid Fire", KAAN.Rage.RapidFire, function(state)
+KAAN.Rage.RapidFire = state
+end, rageLeft)
+createToggle("Max Penetration", KAAN.Rage.MaxPenetration, function(state)
+KAAN.Rage.MaxPenetration = state
+showNotification("🧨 Penetration: " .. (state and "GOD" or "NORMAL"), 2)
+end, rageLeft)
+createSection("🛠️ Utilities", rageLeft)
+createButton("DUMP WEAPON INFO", function()
+dumpCurrentWeapon()
+end, rageLeft)
+createSection("🛡️ Anti-Aim (HvH)", rageRight)
+createToggle("Enable Anti-Aim", KAAN.Rage.AntiAim, function(state)
+KAAN.Rage.AntiAim = state
+if state then showNotification("🛡️ AA ENABLED", 2) end
+end, rageRight)
+createSelector("Yaw (Spin)", {"Spin", "Jitter", "Backwards"},
+KAAN.Rage.AA_Yaw == "Spin" and 1 or (KAAN.Rage.AA_Yaw == "Jitter" and 2 or 3),
+function(value, index)
+if index == 1 then KAAN.Rage.AA_Yaw = "Spin"
+elseif index == 2 then KAAN.Rage.AA_Yaw = "Jitter"
+else KAAN.Rage.AA_Yaw = "Backwards" end
+end, rageRight)
+createSelector("Pitch (Angle)", {"None", "Down", "Up"},
+KAAN.Rage.AA_Pitch == "None" and 1 or (KAAN.Rage.AA_Pitch == "Down" and 2 or 3),
+function(value, index)
+if index == 1 then KAAN.Rage.AA_Pitch = "None"
+elseif index == 2 then KAAN.Rage.AA_Pitch = "Down"
+else KAAN.Rage.AA_Pitch = "Up" end
+end, rageRight)
+createSlider("Spin/Jitter Speed", 1, 100, KAAN.Rage.AA_Speed, function(value)
+KAAN.Rage.AA_Speed = value
+end, rageRight)
+createSection("⚠️ Extra Rage Configs", rageRight)
+createToggle("Auto Stop (Rage)", KAAN.Rage.AutoStop, function(state)
+KAAN.Rage.AutoStop = state
+end, rageRight)
+createToggle("Killshot (Auto-MinDmg)", KAAN.Rage.Killshot, function(state)
+KAAN.Rage.Killshot = state
+end, rageRight)
+createSelector("Aim Priority", {"Auto", "Head", "Chest"},
+KAAN.Rage.Priority == "Auto" and 1 or (KAAN.Rage.Priority == "Head" and 2 or 3),
+function(value, index)
+if index == 1 then KAAN.Rage.Priority = "Auto"
+elseif index == 2 then KAAN.Rage.Priority = "Head"
+else KAAN.Rage.Priority = "Chest" end
+end, rageRight
+)
+createSlider("Min Damage (Est)", 0, 100, KAAN.Rage.MinDamage, function(value)
+KAAN.Rage.MinDamage = value
+end, rageRight)
+createSlider("Hit Chance %", 0, 100, KAAN.Rage.HitChance, function(value)
+KAAN.Rage.HitChance = value
+end, rageRight)
+createSection("🎯 Auto Peek (Quick Peek)", rageRight)
+createToggle("Enable Auto Peek", KAAN.Rage.AutoPeek, function(state)
+KAAN.Rage.AutoPeek = state
+if state then showNotification("🎯 Auto Peek ENABLED (Left Alt)", 2) end
+end, rageRight)
+createSelector("Peek Mode", {"Hold", "Toggle"},
+KAAN.Rage.AutoPeekMode == "Hold" and 1 or 2,
+function(value, index)
+KAAN.Rage.AutoPeekMode = value
+end, rageRight)
+keybindButtons.autoPeek = createKeybind("Peek Key",
+function() return KAAN.Rage.AutoPeekKey end,
+function(newKey) KAAN.Rage.AutoPeekKey = newKey end,
+rageRight
+)
+end
+do
+createSection("🐰 Movement (Bhop)", miscLeft)
+createToggle("Bunny Hop", KAAN.Misc.Bhop.Enabled, function(state)
+KAAN.Misc.Bhop.Enabled = state
+end, miscLeft)
+createSelector("Mode", {"Manual", "Automatic"}, KAAN.Misc.Bhop.Auto and 2 or 1, function(value, index)
+KAAN.Misc.Bhop.Auto = (index == 2)
+end, miscLeft)
+createSlider("Speed", 10, 100, KAAN.Misc.Bhop.Speed, function(value)
+KAAN.Misc.Bhop.Speed = value
+end, miscLeft, 0.5)
+createSection("⚡ SpeedHack", miscLeft)
+createToggle("Speed Hack", KAAN.Misc.Speed.Enabled, function(state)
+KAAN.Misc.Speed.Enabled = state
+end, miscLeft)
+createSlider("Speed", 16, 100, KAAN.Misc.Speed.Value, function(value)
+KAAN.Misc.Speed.Value = value
+end, miscLeft)
+createSection("💬 Chat Spam", miscLeft)
+createToggle("Enable Chat Spam", KAAN.Misc.ChatSpam.Enabled, function(state)
+KAAN.Misc.ChatSpam.Enabled = state
+end, miscLeft)
+createTextInput("Spam Message", KAAN.Misc.ChatSpam.Message, function(text)
+KAAN.Misc.ChatSpam.Message = text
+end, miscLeft)
+createSection("📊 Overlay", miscRight)
+createToggle("Show Hotkeys", GuiInstances.HotkeysOverlayEnabled, function(state)
+GuiInstances.HotkeysOverlayEnabled = state
+GuiInstances.HotkeysGui.Enabled = state
+end, miscRight)
+createToggle("Spectator List", SpectatorState.Enabled, function(state)
+SpectatorState.Enabled = state
+if state then createSpectatorUI() end
+updateSpectators()
+end, miscRight)
+local scanMapButton = Instance.new("TextButton")
+scanMapButton.Size = UDim2.new(1, -10, 0, 30)
+scanMapButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+scanMapButton.Text = "🗺️ Scan Map (X)"
+scanMapButton.TextColor3 = Color3.new(1, 1, 1)
+scanMapButton.TextSize = 12
+scanMapButton.Font = Enum.Font.GothamBold
+scanMapButton.Parent = miscRight
+local scanMapCorner = Instance.new("UICorner")
+scanMapCorner.CornerRadius = UDim.new(0, 6)
+scanMapCorner.Parent = scanMapButton
+scanMapButton.MouseButton1Click:Connect(function()
+scanAllMapObjects()
+showNotification("🗺️ Map Scanned! Check F9", 3)
+end)
+createSection("🛡️ Anti-Kick", miscRight)
+createToggle("Anti-Spec (Auto Reaction)", AntiSpec.Enabled, function(state)
+AntiSpec.Enabled = state
+if state then
+showNotification("🛡️ Anti-Spec: Enabled", 2)
+else
+showNotification("🛡️ Anti-Spec Disabled", 2)
+if AntiSpec.IsActive then
+if AntiSpec.RageWasEnabled then KAAN.Rage.Enabled = true end
+if AntiSpec.Mode == "Legit" then
+if AntiSpec.LegitWasEnabled == false then KAAN.Aim.Enabled = false end
+elseif AntiSpec.Mode == "LegitBot" or AntiSpec.Mode == "All" then
+if AntiSpec.LegitWasEnabled then KAAN.Aim.Enabled = true end
+end
+end
+AntiSpec.IsActive = false
+AntiSpec.RageWasEnabled = false
+AntiSpec.LegitWasEnabled = false
+end
+end, miscRight)
+createSelector("Anti-Spec Action", {"Legit", "LegitBot", "All"}, 1, function(value, index)
+AntiSpec.Mode = value
+showNotification("Anti-Spec: " .. value, 2)
+end, miscRight)
+end
+do
+createSection("🕶️ Game Visuals", visLeft)
+createToggle("No Flash", KAAN.Visuals.NoFlash, function(state)
+KAAN.Visuals.NoFlash = state
+end, visLeft)
+createToggle("No Smoke (+Timer)", KAAN.Visuals.NoSmoke, function(state)
+KAAN.Visuals.NoSmoke = state
+end, visLeft)
+createSection("👀 Camera / Third Person", visLeft)
+createToggle("Third Person", KAAN.Misc.ThirdPerson.Enabled, function(state)
+KAAN.Misc.ThirdPerson.Enabled = state
+end, visLeft)
+keybindButtons.tp = createKeybind("TP Key",
+function() return KAAN.Misc.ThirdPerson.Key end,
+function(newKey) KAAN.Misc.ThirdPerson.Key = newKey end,
+visLeft
+)
+createSlider("Distance (Zoom)", 2, 30, KAAN.Misc.ThirdPerson.Distance, function(value)
+KAAN.Misc.ThirdPerson.Distance = value
+end, visLeft)
+createSlider("Offset X (Side)", -100, 100, math.floor(KAAN.Misc.ThirdPerson.OffsetX * 10), function(value)
+KAAN.Misc.ThirdPerson.OffsetX = value / 10
+end, visLeft)
+createSlider("Offset Y (Height)", -100, 100, math.floor(KAAN.Misc.ThirdPerson.OffsetY * 10), function(value)
+KAAN.Misc.ThirdPerson.OffsetY = value / 10
+end, visLeft)
+createSection("📡 Radar", visLeft)
+createToggle("Enable Radar", KAAN.Visuals.Radar.Enabled, function(state)
+KAAN.Visuals.Radar.Enabled = state
+updateRadar()
+end, visLeft)
+createSlider("Range", 50, 500, KAAN.Visuals.Radar.Range, function(value)
+KAAN.Visuals.Radar.Range = value
+updateRadar()
+end, visLeft, 10)
+createSlider("Bg Alpha", 0, 10, math.floor(KAAN.Visuals.Radar.BackgroundAlpha * 10), function(value)
+KAAN.Visuals.Radar.BackgroundAlpha = value / 10
+updateRadar()
+end, visLeft, 1)
+createSection("🎨 Hitmarker & UI", visRight)
+createToggle("Hitmarker (Damage)", KAAN.Visuals.DamageEsp, function(state)
+KAAN.Visuals.DamageEsp = state
+if state then showNotification("🩸 Hitmarker Enabled", 2) end
+end, visRight)
+createSlider("Duration (s)", 5, 50, math.floor(KAAN.Visuals.HitmarkerDuration * 10), function(value)
+KAAN.Visuals.HitmarkerDuration = value / 10
+end, visRight)
+createSection("🎯 Crosshair Custom", visRight)
+crosshairXSlider = createSlider("Offset X", -100, 100, KAAN.Visuals.Crosshair.X, function(value)
+KAAN.Visuals.Crosshair.X = value
+createOrUpdateFOVCircle()
+end, visRight)
+crosshairYSlider = createSlider("Offset Y", -100, 100, KAAN.Visuals.Crosshair.Y, function(value)
+KAAN.Visuals.Crosshair.Y = value
+createOrUpdateFOVCircle()
+end, visRight)
+createButton("🔄 Reset Position", function()
+KAAN.Visuals.Crosshair.X = 0
+KAAN.Visuals.Crosshair.Y = 0
+crosshairXSlider.SetValue(0)
+crosshairYSlider.SetValue(0)
+createOrUpdateFOVCircle()
+showNotification("🎯 Crosshair Reset", 2)
+end, visRight)
+createSection("▶ View Arrows (Offscreen)", visRight)
+createToggle("Enable Arrows", KAAN.Visuals.ViewArrows, function(state)
+KAAN.Visuals.ViewArrows = state
+end, visRight)
+createSlider("Radius (Distance)", 100, 500, KAAN.Visuals.ArrowRadius, function(value)
+KAAN.Visuals.ArrowRadius = value
+end, visRight)
+end
+keybindButtons.menu = createKeybind("Main Menu",
+function() return MenuKey end,
+function(newKey) MenuKey = newKey end,
+keysLeft
+)
+keybindButtons.bhop = createKeybind("Bhop Key",
+function() return BhopKey end,
+function(newKey) BhopKey = newKey end,
+keysLeft
+)
+createSection("👹 Rage Hotkeys", keysRight)
+keybindButtons.autoscope = createKeybind("AutoScope Toggle",
+function() return AutoScopeKey end,
+function(newKey) AutoScopeKey = newKey end,
+keysRight
+)
+local function addToEnemyCache(player, character)
+if not character then return end
+local root = character:WaitForChild("HumanoidRootPart", 1)
+local hum = character:WaitForChild("Humanoid", 1)
+local head = character:FindFirstChild("Head")
+if root and hum and head then
+SharedEnemyCache[player] = {
+Player = player,
+Character = character,
+RootPart = root,
+Humanoid = hum,
+Head = head
+}
+hum.Died:Connect(function()
+SharedEnemyCache[player] = nil
+end)
+end
+end
+local function setupPlayer(player)
+if player == LocalPlayer then return end
+player.CharacterAdded:Connect(function(character)
+task.wait(0.5)
+addESP(character, player)
+updateESP()
+addToEnemyCache(player, character)
+character.AncestryChanged:Connect(function(_, parent)
+if not parent then
+removeESP(character)
+SharedEnemyCache[player] = nil
+end
+end)
+end)
+if player.Character and player.Character.Parent then
+local char = player.Character
+addESP(char, player)
+updateESP()
+addToEnemyCache(player, char)
+char.AncestryChanged:Connect(function(_, parent)
+if not parent then
+removeESP(char)
+SharedEnemyCache[player] = nil
+end
+end)
+end
+end
+for _, player in ipairs(Players:GetPlayers()) do
+task.spawn(function() setupPlayer(player) end)
+end
+Players.PlayerAdded:Connect(function(player)
+task.spawn(function() setupPlayer(player) end)
+end)
+Players.PlayerRemoving:Connect(function(player)
+if player.Character then
+removeESP(player.Character)
+end
+SharedEnemyCache[player] = nil
+end)
+local function disableFlash()
+if not KAAN.Visuals.NoFlash then return end
+local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+if pGui then
+local gui = pGui:FindFirstChild("GUI")
+if gui then
+local flash = gui:FindFirstChild("Flashbang")
+if flash and flash:IsA("Frame") and flash.Visible then
+flash.Visible = false
+flash.BackgroundTransparency = 1
+end
+local blind = gui:FindFirstChild("Blind")
+if blind and blind:IsA("Frame") and blind.Visible then
+blind.Visible = false
+blind.BackgroundTransparency = 1
+end
+for _, child in ipairs(gui:GetChildren()) do
+if child:IsA("Frame") and child.Visible then
+local lowName = child.Name:lower()
+if lowName:find("blind") or lowName:find("flash") then
+child.Visible = false
+child.BackgroundTransparency = 1
+end
+end
+end
+end
+local blnd = pGui:FindFirstChild("Blnd")
+if blnd and blnd:IsA("ScreenGui") and blnd.Enabled then
+blnd.Enabled = false
+end
+for _, child in ipairs(pGui:GetChildren()) do
+if child:IsA("ScreenGui") and child.Enabled then
+local lowName = child.Name:lower()
+if lowName == "flashbang" or lowName == "blind" then
+child.Enabled = false
+end
+end
+end
+end
+local camera = workspace.CurrentCamera
+if camera then
+local blur = camera:FindFirstChild("Blur")
+if blur and blur:IsA("BlurEffect") and blur.Size > 10 then
+blur.Size = 0
+end
+local cc = camera:FindFirstChild("ColorCorrection")
+if cc and cc:IsA("ColorCorrectionEffect") and cc.Brightness > 0.5 then
+cc.Enabled = false
+end
+end
+local lighting = game:GetService("Lighting")
+for _, child in ipairs(lighting:GetChildren()) do
+if child:IsA("ColorCorrectionEffect") then
+if child.Brightness > 0.5 then
+child.Brightness = 0
+child.TintColor = Color3.new(1, 1, 1)
+end
+elseif child:IsA("BlurEffect") and child.Size > 10 then
+if child.Name:lower():find("flash") then
+child.Size = 0
+end
+end
+end
+end
+RunService:UnbindFromRenderStep("KAANLoop") -- Limpa anterior se existir
+local frameCounter = 0
+RunService:BindToRenderStep("KAANLoop", Enum.RenderPriority.Last.Value, function(step)
+frameCounter = frameCounter + 1
+local camera = workspace.CurrentCamera
+if not camera then return end
+local character = LocalPlayer.Character
+local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+local head = character and character:FindFirstChild("Head")
+local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+if frameCounter == 1 then
+finalCFrame = camera.CFrame
+end
+KAAN.Rage.IsFiringThisFrame = false
+KAAN.Aim.IsFiringThisFrame = false
+disableFlash() -- NoFlash aqui (RenderStepped) garante que sobrescrevemos o frame antes de desenhar
+if KAAN.Rage.AntiAim and rootPart then
+if not aaStabilizer or not aaStabilizer.Parent then
+aaStabilizer = Instance.new("Part")
+aaStabilizer.Name = "AA_Stabilizer"
+aaStabilizer.Transparency = 1
+aaStabilizer.CanCollide = false
+aaStabilizer.Anchored = true
+aaStabilizer.Size = Vector3.new(0.1, 0.1, 0.1)
+aaStabilizer.Parent = workspace
+end
+aaStabilizer.Position = rootPart.Position + Vector3.new(0, 1.5, 0)
+if camera.CameraSubject ~= aaStabilizer then
+camera.CameraSubject = aaStabilizer
+end
+else
+if aaStabilizer then
+aaStabilizer:Destroy()
+aaStabilizer = nil
+if humanoid then camera.CameraSubject = humanoid end
+end
+if humanoid and camera.CameraSubject ~= humanoid then
+camera.CameraSubject = humanoid
+end
+end
+if rootPart and head then
+local headHeight = (head.Position.Y - rootPart.Position.Y)
+if headHeight < 0 or headHeight > 3 then headHeight = 1.5 end
+finalCFrame = CFrame.new(rootPart.Position + Vector3.new(0, headHeight, 0)) * camera.CFrame.Rotation
+end
+if frameCounter % 3 == 0 then
+updateESP()
+updateWorldC4ESP()
+updateDroppedWeapons()
+end
+if frameCounter % 5 == 0 then
+WeaponHacks:onStep()
+end
+checkTriggerFixed() -- CHECKS TRIGGERBOT / AUTOFIRE (Rage & Legit)
+if fovCircle and fovCircle.Parent then
+local shouldShow = KAAN.Aim.ShowFOV and (not KAAN.Rage.Enabled)
+if fovCircle.Visible ~= shouldShow then
+fovCircle.Visible = shouldShow
+end
+if shouldShow then
+fovCircle.Size = UDim2.new(0, KAAN.Aim.FOV * 2, 0, KAAN.Aim.FOV * 2)
+fovCircle.Position = UDim2.new(0.5, KAAN.Visuals.Crosshair.X, 0.5, KAAN.Visuals.Crosshair.Y)
+end
+end
+if frameCounter % 30 == 0 then -- 2x por segundo
+updateSpectators()
+end
+local character = LocalPlayer.Character
+local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+local isAlive = humanoid and humanoid.Health > 0
+if frameCounter % 300 == 0 then -- A cada 5 segundos
+table.clear(SharedIgnoreList)
+table.clear(SharedPartsToScan)
+end
+local rageIsActive = isAlive and KAAN.Rage.Enabled
+local legitIsActive = isAlive and KAAN.Aim.Enabled and (KAAN.Aim.Active or KAAN.Aim.Mode == "Always") and (not KAAN.Rage.Enabled)
+local aimIsActive = rageIsActive or legitIsActive
+if aimIsActive then
+local shouldSearch = false
+if not currentTargetForPart then
+if KAAN.Rage.Enabled then
+shouldSearch = true -- RAGE: 60Hz (Máxima performance)
+else
+shouldSearch = (frameCounter % 2 == 0) -- LEGIT: 30hz
+end
+else
+local targetChar = currentTargetForPart.Character
+local targetHum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+local targetAlive = targetHum and targetHum.Health > 0
+if not targetAlive then
+if KAAN.Rage.Killshot and currentTargetForPart then
+local sound = Instance.new("Sound")
+sound.SoundId = "rbxassetid://1694361582" -- Bell/Skeet Sound
+sound.Volume = 3
+sound.Parent = game:GetService("SoundService")
+sound.PlayOnRemove = true
+sound:Destroy()
+end
+shouldSearch = true
+currentTargetForPart = nil
+currentTargetPart = nil -- IMPORTANTE: Sincroniza limpeza
+elseif KAAN.Rage.Enabled then
+shouldSearch = true -- Rage com target vivo: 60Hz (Instaswitch)
+else
+shouldSearch = (frameCounter % 3 == 0)
+end
+end
+if (tick() % 0.1 < 0.01) then shouldSearch = true end
+if shouldSearch then
+currentTargetForPart = getClosestEnemy()
+end
+local target = currentTargetForPart
+if target and not KAAN.Rage.Enabled then
+local part = getAimPartFixed(target)
+if part then
+local screenPoint, onScreen = camera:WorldToViewportPoint(part.Position)
+local center = Vector2.new(camera.ViewportSize.X / 2 + KAAN.Visuals.Crosshair.X, camera.ViewportSize.Y / 2 + KAAN.Visuals.Crosshair.Y)
+if onScreen then
+local dist2D = (center - Vector2.new(screenPoint.X, screenPoint.Y)).Magnitude
+local effectiveFOV = KAAN.Aim.FOV * 1.2
+if dist2D > effectiveFOV then
+target = nil
+currentTargetForPart = nil
+end
+else
+target = nil
+currentTargetForPart = nil
+end
+else
+target = nil
+currentTargetForPart = nil
+end
+end
+if target and target.Character and target.Character.Parent then
+local targetHumanoid = target.Character:FindFirstChildOfClass("Humanoid")
+if targetHumanoid and targetHumanoid.Health > 0 then
+local part = nil
+local allowWallbang = KAAN.Rage.Enabled and KAAN.Rage.WallCheck
+local visible = isPlayerVisible(target)
+if visible then
+part = getAimPartFixed(target)
+elseif allowWallbang then
+if canHitWallbang(target) then
+part = getAimPartFixed(target)
+end
+end
+if part and part.Parent then
+if KAAN.Rage.Enabled then
+local targetPos = part.Position
+local aimOrigin = camera.CFrame.Position
+local myChar = LocalPlayer.Character
+if myChar then
+local myHead = myChar:FindFirstChild("Head")
+if myHead then
+local dist = (camera.CFrame.Position - myHead.Position).Magnitude
+if KAAN.Misc.ThirdPerson.Enabled or dist > 2 then
+aimOrigin = myHead.Position
+end
+end
+end
+local aimCFrame = CFrame.lookAt(aimOrigin, targetPos)
+if KAAN.Rage.SilentAim then
+local shouldShoot = false
+if KAAN.Rage.AutoFire then
+local currentTime = tick()
+local effectiveDelay = (KAAN.Rage.RapidFire or KAAN.Rage.NoSpread) and 0 or KAAN.Rage.ShotDelay
+if (currentTime - lastTriggerTime) >= effectiveDelay then
+shouldShoot = true
+end
+end
+if shouldShoot then
+if KAAN.Rage.AutoStop then applyAutoStop() end
+local oldCF = camera.CFrame
+camera.CFrame = CFrame.lookAt(oldCF.Position, targetPos)
+WeaponHacks:onStep()
+currentTargetPart = part
+if simulateMouseClick() then
+KAAN.Rage.IsFiringThisFrame = true
+KAAN.Aim.IsFiringThisFrame = true
+lastTriggerTime = tick()
+task.delay(0.05, function() AutoPeek:returnToSaved() end)
+end
+game:GetService("RunService").Heartbeat:Once(function()
+camera.CFrame = oldCF
+end)
+else
+currentTargetPart = part
+end
+else
+finalCFrame = CFrame.new(finalCFrame.Position) * aimCFrame.Rotation
+camera.CFrame = CFrame.new(aimOrigin) * aimCFrame.Rotation
+currentTargetPart = part
+if KAAN.Rage.AutoFire then
+local currentTime = tick()
+local effectiveDelay = (KAAN.Rage.RapidFire or KAAN.Rage.NoSpread) and 0 or KAAN.Rage.ShotDelay
+if (currentTime - lastTriggerTime) >= effectiveDelay then
+if KAAN.Rage.AutoStop then applyAutoStop() end
+if simulateMouseClick() then
+lastTriggerTime = currentTime
+KAAN.Rage.IsFiringThisFrame = true
+KAAN.Aim.IsFiringThisFrame = true
+task.delay(0.05, function() AutoPeek:returnToSaved() end)
+end
+end
+end
+end
+else
+finalCFrame = camera.CFrame
+local targetPos = part.Position
+local goalCFrame = CFrame.lookAt(finalCFrame.Position, targetPos)
+local frameDelta = step or game:GetService("RunService").Heartbeat:Wait()
+local lerpFactor = math.clamp((1 / KAAN.Aim.Smoothness) * (frameDelta * 60), 0.08, 1)
+finalCFrame = finalCFrame:Lerp(goalCFrame, lerpFactor)
+currentTargetPart = part
+if KAAN.Aim.AutoStop then applyAutoStop() end
+end
+else
+if KAAN.Rage.Enabled then
+currentTargetForPart = nil
+currentTargetPart = nil
+end
+end
+else
+currentTargetForPart = nil
+currentTargetPart = nil
+end
+else
+currentTargetForPart = nil
+currentTargetPart = nil
+end
+else
+currentTargetForPart = nil
+currentTargetPart = nil
+end
+if isAlive and not KAAN.Rage.Enabled then
+checkTriggerFixed()
+end
+if KAAN.Misc.ThirdPerson.Enabled then
+LocalPlayer.CameraMode = Enum.CameraMode.Classic
+LocalPlayer.CameraMaxZoomDistance = 100
+LocalPlayer.CameraMinZoomDistance = 0.5
+camera.CFrame = finalCFrame * CFrame.new(KAAN.Misc.ThirdPerson.OffsetX, KAAN.Misc.ThirdPerson.OffsetY, KAAN.Misc.ThirdPerson.Distance)
+if character and (frameCounter % 10 == 0) then
+for _, part in ipairs(character:GetDescendants()) do
+if part:IsA("BasePart") then
+part.LocalTransparencyModifier = 0
+elseif part:IsA("Decal") or part:IsA("Texture") then
+part.LocalTransparencyModifier = 0
+end
+end
+end
+else
+if KAAN.Rage.Enabled and KAAN.Rage.SilentAim and currentTargetPart then
+elseif (aimIsActive or KAAN.Rage.Enabled) and currentTargetPart then
+camera.CFrame = finalCFrame
+elseif aimIsActive or KAAN.Rage.Enabled then
+finalCFrame = camera.CFrame
+else
+finalCFrame = camera.CFrame
+end
+end
+end)
+local function handleSmoke(obj)
+if obj.Name == "Smokes" then
+for _, child in ipairs(obj:GetChildren()) do
+handleSmoke(child)
+end
+return
+end
+for _, desc in ipairs(obj:GetDescendants()) do
+if desc:IsA("ParticleEmitter") then
+desc.Enabled = false
+end
+end
+if not obj:FindFirstChild("SmokeESP") then
+local bg = Instance.new("BillboardGui")
+bg.Name = "SmokeESP"
+bg.Adornee = obj
+bg.Size = UDim2.new(0, 100, 0, 50)
+bg.StudsOffset = Vector3.new(0, 2, 0)
+bg.AlwaysOnTop = true
+bg.Parent = obj
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, 0, 0.6, 0)
+label.BackgroundTransparency = 1
+label.Text = "☁️ SMOKE"
+label.TextColor3 = Color3.fromRGB(150, 150, 150) -- Darker Gray
+label.Font = Enum.Font.GothamBold
+label.TextSize = 14
+label.Parent = bg
+local timer = Instance.new("TextLabel")
+timer.Size = UDim2.new(1, 0, 0.4, 0)
+timer.Position = UDim2.new(0, 0, 0.6, 0)
+timer.BackgroundTransparency = 1
+timer.TextColor3 = Color3.fromRGB(255, 255, 255)
+timer.Font = Enum.Font.Code
+timer.TextSize = 12
+timer.Parent = bg
+local adorneePart = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+local startTime = tick()
+if adorneePart then
+local cylinder = Instance.new("CylinderHandleAdornment")
+cylinder.Name = "SmokeCircle3D"
+cylinder.Adornee = adorneePart
+cylinder.Height = 0.5 -- Espessura visual do anel (achatado)
+cylinder.Radius = 14 -- Raio (~28 studs diâmetro)
+cylinder.CFrame = CFrame.Angles(math.rad(90), 0, 0) -- Rotaciona para ficar deitado no chão
+cylinder.Color3 = Color3.fromRGB(150, 150, 150)
+cylinder.Transparency = 0.4
+cylinder.AlwaysOnTop = true
+cylinder.ZIndex = 1
+cylinder.Parent = obj
+task.spawn(function()
+while obj and obj.Parent and (tick() - startTime < 18) do
+task.wait(0.5)
+end
+if cylinder then cylinder:Destroy() end
+end)
+end
+task.spawn(function()
+while obj and obj.Parent and (tick() - startTime < 18) do
+local remaining = 18 - (tick() - startTime)
+timer.Text = string.format("%.1fs", remaining)
+task.wait(0.1)
+end
+if bg then bg:Destroy() end
+if circleBg then circleBg:Destroy() end
+end)
+end
+end
+local function monitorNoSmoke()
+if not KAAN.Visuals.NoSmoke then return end
+local function check(v)
+if v.Name == "Smoke" or v.Name:find("Smoke") or v.Name == "Grenade" or v.Name:find("Cloud") then
+if v:FindFirstChildWhichIsA("ParticleEmitter", true) or v.Name == "Smokes" then
+handleSmoke(v)
+end
+end
+end
+for _, v in ipairs(workspace:GetChildren()) do check(v) end
+if workspace:FindFirstChild("Ray_Ignore") then
+for _, v in ipairs(workspace.Ray_Ignore:GetChildren()) do check(v) end
+end
+if workspace:FindFirstChild("Debris") then
+for _, v in ipairs(workspace.Debris:GetChildren()) do check(v) end
+end
+end
+local miscTimer = 0
+RunService.Heartbeat:Connect(function(dt)
+miscTimer = miscTimer + dt
+if miscTimer > 0.2 then -- 5Hz
+monitorNoSmoke()
+miscTimer = 0
+end
+end)
+local function getWalkVector()
+local vec = Vector3.new(0, 0, 0)
+if UserInputService:IsKeyDown(Enum.KeyCode.W) then vec = vec + Vector3.new(0, 0, -1) end
+if UserInputService:IsKeyDown(Enum.KeyCode.S) then vec = vec + Vector3.new(0, 0, 1) end
+if UserInputService:IsKeyDown(Enum.KeyCode.A) then vec = vec + Vector3.new(-1, 0, 0) end
+if UserInputService:IsKeyDown(Enum.KeyCode.D) then vec = vec + Vector3.new(1, 0, 0) end
+return vec
+end
+RunService.Heartbeat:Connect(function()
+if not KAAN.Rage.IsFiringThisFrame then KAAN.Rage.IsFiringThisFrame = false end -- Reset Flag
+local camera = workspace.CurrentCamera
+if not camera then return end
+local character = LocalPlayer.Character
+local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+local humanoid = character and character:FindFirstChild("Humanoid")
+if character and rootPart and humanoid and humanoid.Health > 0 then
+local rageIsActive = KAAN.Rage.Enabled
+local legitIsActive = KAAN.Aim.Enabled and (KAAN.Aim.Active or KAAN.Aim.Mode == "Always") and (not KAAN.Rage.Enabled)
+local aimIsActive = rageIsActive or legitIsActive
+local shouldStop = false
+if KAAN.Rage.Enabled and KAAN.Rage.AutoStop and currentTargetPart and currentTargetPart.Parent then
+local targetHum = currentTargetForPart and currentTargetForPart.Character and
+currentTargetForPart.Character:FindFirstChildOfClass("Humanoid")
+if targetHum and targetHum.Health > 0 then
+shouldStop = true
+end
+end
+if aimIsActive and KAAN.Aim.AutoStop and currentTargetForPart and currentTargetForPart.Character then
+local targetHum = currentTargetForPart.Character:FindFirstChildOfClass("Humanoid")
+if targetHum and targetHum.Health > 0 then
+shouldStop = true
+end
+end
+if KAAN.Rage.AntiAim then
+if KAAN.Rage.IsFiringThisFrame then
+else
+if not shouldStop then
+local camCF = camera.CFrame
+local moveDir = Vector3.new(0,0,0)
+if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camCF.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camCF.LookVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camCF.RightVector end
+if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camCF.RightVector end
+if moveDir.Magnitude > 0 then
+moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
+humanoid:Move(moveDir)
+end
+end
+local yawAngle = 0
+if KAAN.Rage.AA_Yaw == "Spin" then
+yawAngle = tick() * (KAAN.Rage.AA_Speed / 2)
+elseif KAAN.Rage.AA_Yaw == "Jitter" then
+local jitterAmt = math.rad(KAAN.Rage.AA_Speed * 2)
+if frameCounter % 4 < 2 then
+yawAngle = jitterAmt
+else
+yawAngle = -jitterAmt
+end
+local _, camY, _ = camera.CFrame:ToOrientation()
+yawAngle = yawAngle + camY
+elseif KAAN.Rage.AA_Yaw == "Backwards" then
+local _, camY, _ = camera.CFrame:ToOrientation()
+yawAngle = camY + math.pi
+end
+local currentPos = rootPart.Position
+local newCF = CFrame.new(currentPos) * CFrame.Angles(0, yawAngle, 0)
+rootPart.CFrame = newCF
+end
+if KAAN.Rage.AA_Pitch ~= "None" then
+local neck = character:FindFirstChild("Neck", true) or character:FindFirstChild("Head"):FindFirstChild("Neck")
+local waist = character:FindFirstChild("Waist", true)
+local pAngle = (KAAN.Rage.AA_Pitch == "Down") and -1.5 or 1.5
+if waist then
+waist.C0 = CFrame.new(waist.C0.Position) * CFrame.Angles(pAngle, 0, 0)
+elseif neck then
+neck.C0 = CFrame.new(neck.C0.Position) * CFrame.Angles(pAngle, 0, 0)
+end
+end
+humanoid.AutoRotate = false
+else
+humanoid.AutoRotate = true
+end
+if KAAN.Rage.AutoScoop and KAAN.Rage.Enabled and KAAN.Rage.AutoFire then
+local isScoped, reason = isPlayerScoped()
+if currentTargetPart and currentTargetPart.Parent then
+if not isScoped then
+if (tick() - lastScopeToggleTime) > 0.2 then
+pcall(function()
+VIM:SendMouseButtonEvent(0, 0, 1, true, game, 1) -- Press Right Click
+task.wait(0.05)
+VIM:SendMouseButtonEvent(0, 0, 1, false, game, 1) -- Release Right Click (Click)
+end)
+lastScopeToggleTime = tick()
+end
+end
+else
+if isScoped then
+if (tick() - lastScopeToggleTime) > 0.2 then
+pcall(function()
+VIM:SendMouseButtonEvent(0, 0, 1, true, game, 1)
+task.wait(0.05)
+VIM:SendMouseButtonEvent(0, 0, 1, false, game, 1)
+end)
+lastScopeToggleTime = tick()
+end
+end
+end
+end
+if shouldStop then
+humanoid:Move(Vector3.zero)
+rootPart.AssemblyLinearVelocity = Vector3.new(0, rootPart.AssemblyLinearVelocity.Y, 0)
+end
+local isGrounded = MovementHacks:isGrounded(character, rootPart, humanoid)
+if KAAN.Misc.Bhop.Enabled then
+if UserInputService:IsKeyDown(KAAN.Misc.Bhop.Key) or KAAN.Misc.Bhop.Auto then
+if isGrounded then
+humanoid.Jump = true
+pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end)
+else
+local moveDir = humanoid.MoveDirection
+if moveDir.Magnitude > 0 then
+local vel = rootPart.AssemblyLinearVelocity
+local target = moveDir * KAAN.Misc.Bhop.Speed
+rootPart.AssemblyLinearVelocity = vel:Lerp(Vector3.new(target.X, vel.Y, target.Z), 0.2)
+end
+end
+end
+end
+if KAAN.Misc.Speed.Enabled then
+if isGrounded and humanoid.MoveDirection.Magnitude > 0 then
+local speedVal = KAAN.Misc.Speed.Value or 5
+local moveDir = humanoid.MoveDirection
+rootPart.AssemblyLinearVelocity = Vector3.new(moveDir.X * speedVal * 5, rootPart.AssemblyLinearVelocity.Y, moveDir.Z * speedVal * 5)
+end
+end
+end
+end)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+if waitingForKeybind then
+local inputValue = nil
+if input.UserInputType == Enum.UserInputType.Keyboard then
+local keyCode = input.KeyCode
+if keyCode == Enum.KeyCode.Unknown or keyCode == Enum.KeyCode.Escape then
+waitingForKeybind = nil
+for _, kb in pairs(keybindButtons) do
+kb.UpdateDisplay()
+end
+showNotification("❌ Keybind cancelado", 2)
+return
+end
+inputValue = keyCode
+elseif isMouseInput(input.UserInputType) then
+inputValue = input.UserInputType
+end
+if inputValue then
+for name, kb in pairs(keybindButtons) do
+if kb.IsWaiting() then
+kb.SetKey(inputValue)
+lastKeybindCaptureTime = tick()
+showNotification("✅ Configurado: " .. getInputName(inputValue), 2)
+break
+end
+end
+return
+end
+end
+local bhopKeyPressed = (typeof(KAAN.Misc.Bhop.Key) == "EnumItem" and KAAN.Misc.Bhop.Key.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Misc.Bhop.Key)
+or (typeof(KAAN.Misc.Bhop.Key) == "EnumItem" and KAAN.Misc.Bhop.Key.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Misc.Bhop.Key)
+if bhopKeyPressed and not UserInputService:GetFocusedTextBox() then
+spaceHeld = true
+end
+if gameProcessed then return end
+if (typeof(MenuKey) == "EnumItem" and input.KeyCode == MenuKey) or input.UserInputType == MenuKey then
+Frame.Visible = not Frame.Visible
+end
+local aimKeyPressed = (typeof(KAAN.Aim.Key) == "EnumItem" and KAAN.Aim.Key.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Aim.Key)
+or (typeof(KAAN.Aim.Key) == "EnumItem" and KAAN.Aim.Key.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Aim.Key)
+if aimKeyPressed then
+if KAAN.Aim.Mode == "Hold" then
+KAAN.Aim.Active = true
+elseif KAAN.Aim.Mode == "Toggle" then
+if KAAN.Aim.Enabled then
+KAAN.Aim.Active = not KAAN.Aim.Active
+end
+end
+end
+local autoPeekKeyPressed = (typeof(KAAN.Rage.AutoPeekKey) == "EnumItem" and KAAN.Rage.AutoPeekKey.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Rage.AutoPeekKey)
+or (typeof(KAAN.Rage.AutoPeekKey) == "EnumItem" and KAAN.Rage.AutoPeekKey.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Rage.AutoPeekKey)
+if autoPeekKeyPressed then
+if KAAN.Rage.Enabled and KAAN.Rage.AutoPeek then
+if KAAN.Rage.AutoPeekMode == "Hold" then
+if not AutoPeek.Active then AutoPeek:start() end
+elseif KAAN.Rage.AutoPeekMode == "Toggle" then
+if AutoPeek.Active then
+AutoPeek:cancel()
+else
+AutoPeek:start()
+end
+end
+end
+end
+local triggerKeyPressed = (typeof(KAAN.Trigger.Key) == "EnumItem" and KAAN.Trigger.Key.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Trigger.Key)
+or (typeof(KAAN.Trigger.Key) == "EnumItem" and KAAN.Trigger.Key.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Trigger.Key)
+if triggerKeyPressed then
+if KAAN.Trigger.Mode == "Hold" then
+KAAN.Trigger.Active = true
+elseif KAAN.Trigger.Mode == "Toggle" then
+if KAAN.Trigger.Enabled then
+KAAN.Trigger.Active = not KAAN.Trigger.Active
+end
+end
+end
+local tpKeyPressed = (typeof(KAAN.Misc.ThirdPerson.Key) == "EnumItem" and KAAN.Misc.ThirdPerson.Key.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Misc.ThirdPerson.Key)
+or (typeof(KAAN.Misc.ThirdPerson.Key) == "EnumItem" and KAAN.Misc.ThirdPerson.Key.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Misc.ThirdPerson.Key)
+if tpKeyPressed then
+KAAN.Misc.ThirdPerson.Enabled = not KAAN.Misc.ThirdPerson.Enabled
+end
+local autoScopeKeyPressed = (typeof(KAAN.Rage.AutoScopeKey) == "EnumItem" and KAAN.Rage.AutoScopeKey.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Rage.AutoScopeKey)
+or (typeof(KAAN.Rage.AutoScopeKey) == "EnumItem" and KAAN.Rage.AutoScopeKey.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Rage.AutoScopeKey)
+if autoScopeKeyPressed then
+KAAN.Rage.AutoScoop = not KAAN.Rage.AutoScoop
+if KAAN.Rage.AutoScoop then
+showNotification("🔭 AutoScope Ativado", 2)
+else
+showNotification("🔭 AutoScope Desativado", 2)
+end
+end
+end)
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+local bhopKeyReleased = (typeof(KAAN.Misc.Bhop.Key) == "EnumItem" and KAAN.Misc.Bhop.Key.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Misc.Bhop.Key)
+or (typeof(KAAN.Misc.Bhop.Key) == "EnumItem" and KAAN.Misc.Bhop.Key.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Misc.Bhop.Key)
+if bhopKeyReleased then
+spaceHeld = false
+end
+if gameProcessed then return end
+local aimKeyReleased = (typeof(KAAN.Aim.Key) == "EnumItem" and KAAN.Aim.Key.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Aim.Key)
+or (typeof(KAAN.Aim.Key) == "EnumItem" and KAAN.Aim.Key.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Aim.Key)
+if aimKeyReleased and KAAN.Aim.Mode == "Hold" then
+KAAN.Aim.Active = false
+end
+local triggerKeyReleased = (typeof(KAAN.Trigger.Key) == "EnumItem" and KAAN.Trigger.Key.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Trigger.Key)
+or (typeof(KAAN.Trigger.Key) == "EnumItem" and KAAN.Trigger.Key.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Trigger.Key)
+if triggerKeyReleased and KAAN.Trigger.Mode == "Hold" then
+KAAN.Trigger.Active = false
+end
+local autoPeekKeyReleased = (typeof(KAAN.Rage.AutoPeekKey) == "EnumItem" and KAAN.Rage.AutoPeekKey.EnumType == Enum.KeyCode and input.KeyCode == KAAN.Rage.AutoPeekKey)
+or (typeof(KAAN.Rage.AutoPeekKey) == "EnumItem" and KAAN.Rage.AutoPeekKey.EnumType == Enum.UserInputType and input.UserInputType == KAAN.Rage.AutoPeekKey)
+if autoPeekKeyReleased and KAAN.Rage.AutoPeekMode == "Hold" then
+AutoPeek:cancel()
+end
+end)
+local function onCharacterAdded(char, player)
+task.spawn(function()
+local head = char:WaitForChild("Head", 10)
+local hum = char:WaitForChild("Humanoid", 10)
+local root = char:WaitForChild("HumanoidRootPart", 10)
+if head and hum and root then
+task.wait(0.1)
+addESP(char, player)
+end
+end)
+end
+local function onPlayerAdded(player)
+player.CharacterAdded:Connect(function(char)
+onCharacterAdded(char, player)
+end)
+if player.Character then
+onCharacterAdded(player.Character, player)
+end
+end
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, p in ipairs(Players:GetPlayers()) do
+if p ~= LocalPlayer then
+onPlayerAdded(p)
+end
+end
+task.spawn(function()
+task.wait(1)
+while true do
+updateSpectators(false)
+task.wait(0.5)
+end
+end)
+-- [[ RADAR SYSTEM ]]
+local RadarSystem = {
+Gui = nil, Container = nil, Blips = {}, CenterDot = nil
+}
+function RadarSystem:createUI()
+if self.Gui then return end
+self.Gui = Instance.new("ScreenGui")
+self.Gui.Name = "KAANRadar"
+self.Gui.IgnoreGuiInset = false
+self.Gui.ResetOnSpawn = false
+self.Gui.Parent = game:GetService("CoreGui")
+self.Container = Instance.new("Frame")
+self.Container.Name = "RadarContainer"
+self.Container.Size = UDim2.new(0, KAAN.Visuals.Radar.Size, 0, KAAN.Visuals.Radar.Size)
+self.Container.Position = UDim2.new(0, 25, 0, 25)
+self.Container.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+self.Container.BackgroundTransparency = KAAN.Visuals.Radar.BackgroundAlpha
+self.Container.BorderSizePixel = 0
+self.Container.Parent = self.Gui
+local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = self.Container
+local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(138, 43, 226); stroke.Thickness = 2; stroke.Parent = self.Container
+self.CenterDot = Instance.new("Frame")
+self.CenterDot.Name = "Center"
+self.CenterDot.Size = UDim2.new(0, 6, 0, 6)
+self.CenterDot.AnchorPoint = Vector2.new(0.5, 0.5)
+self.CenterDot.Position = UDim2.new(0.5, 0, 0.5, 0)
+self.CenterDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+self.CenterDot.BorderSizePixel = 0
+self.CenterDot.Parent = self.Container
+local centerCorner = Instance.new("UICorner"); centerCorner.CornerRadius = UDim.new(1, 0); centerCorner.Parent = self.CenterDot
+makeDraggable(self.Container)
+end
+function RadarSystem:getBlip(player)
+if not self.Blips[player] then
+local blip = Instance.new("Frame")
+blip.Size = UDim2.new(0, 8, 0, 8)
+blip.AnchorPoint = Vector2.new(0.5, 0.5)
+blip.BorderSizePixel = 0
+blip.Parent = self.Container
+blip.ZIndex = 2
+local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1, 0); c.Parent = blip
+self.Blips[player] = blip
+end
+return self.Blips[player]
+end
+function RadarSystem:update()
+if not KAAN.Visuals.Radar.Enabled then
+if self.Gui then self.Gui.Enabled = false end
+return
+end
+if not self.Gui then self:createUI() end
+self.Gui.Enabled = true
+self.Container.Size = UDim2.new(0, KAAN.Visuals.Radar.Size, 0, KAAN.Visuals.Radar.Size)
+self.Container.BackgroundTransparency = KAAN.Visuals.Radar.BackgroundAlpha
+local range, radius = KAAN.Visuals.Radar.Range, KAAN.Visuals.Radar.Size / 2
+local center = Vector2.new(radius, radius)
+local camera = workspace.CurrentCamera
+if not camera then return end
+local myChar = LocalPlayer.Character
+local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+local myPos = myRoot and myRoot.Position or camera.CFrame.Position
+local _, camYaw, _ = camera.CFrame:ToOrientation()
+local relativeCF = CFrame.Angles(0, camYaw, 0):Inverse()
+for player, data in pairs(SharedEnemyCache) do
+local blip = self:getBlip(player)
+if player == LocalPlayer or not data.RootPart or not data.RootPart.Parent then
+blip.Visible = false; continue
+end
+if not isEnemy(player) or not data.Humanoid or data.Humanoid.Health <= 0 then
+blip.Visible = false; continue
+end
+blip.Visible = true
+blip.BackgroundColor3 = KAAN.Visuals.Radar.EnemyColor
+local distVec = data.RootPart.Position - myPos
+local relVec = relativeCF:VectorToWorldSpace(distVec)
+local scale = (radius - 5) / range
+local uiX, uiY = relVec.X * scale, relVec.Z * scale
+local distUI = math.sqrt(uiX*uiX + uiY*uiY)
+if distUI > (radius - 5) then
+local ratio = (radius - 5) / distUI
+uiX, uiY = uiX * ratio, uiY * ratio
+end
+blip.Position = UDim2.new(0, center.X + uiX, 0, center.Y + uiY)
+end
+for p, blip in pairs(self.Blips) do
+if not SharedEnemyCache[p] and p ~= LocalPlayer then
+if blip then blip.Visible = false end
+end
+end
+end
+local function updateRadar() RadarSystem:update() end
+RunService.RenderStepped:Connect(updateRadar)
+createOrUpdateFOVCircle()
+task.wait(2)
+WeaponHacks:setupEvents()
+do -- ANTI-IDLE
+local VirtualUser = game:GetService("VirtualUser")
+LocalPlayer.Idled:connect(function()
+VirtualUser:CaptureController()
+VirtualUser:ClickButton2(Vector2.new())
+end)
+end
+showNotification("⚡ KAAN.CC LOADED!\nInsert - Menu", 6)
