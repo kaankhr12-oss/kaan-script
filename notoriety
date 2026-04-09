@@ -1,0 +1,522 @@
+local player = game.Players.LocalPlayer
+local mouse = player:GetMouse()
+local userInput = game:GetService("UserInputService")
+local tweenService = game:GetService("TweenService")
+
+-- ========== AYARLAR ==========
+local settings = {
+    speedEnabled = false,
+    speedValue = 80,
+    normalSpeed = 16,
+    jumpEnabled = false,
+    noclipEnabled = false,
+    espEnabled = false,
+    infiniteStamina = false,
+}
+
+-- ========== ANA MENÜ ==========
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "NotorietyGUI"
+screenGui.Parent = game.CoreGui
+screenGui.ResetOnSpawn = false
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 350, 0, 500)
+mainFrame.Position = UDim2.new(0.5, -175, 0.5, -250)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = mainFrame
+
+-- Başlık çubuğu
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = Color3.fromRGB(255, 50, 100)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 12)
+titleCorner.Parent = titleBar
+
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1, -50, 1, 0)
+titleText.Position = UDim2.new(0, 15, 0, 0)
+titleText.BackgroundTransparency = 1
+titleText.Text = "NOTORIETY ULTIMATE"
+titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleText.TextSize = 14
+titleText.Font = Enum.Font.GothamBold
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.Parent = titleBar
+
+-- Kapatma butonu
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 1, 0)
+closeBtn.Position = UDim2.new(1, -30, 0, 0)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 60)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextSize = 14
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = titleBar
+
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- SCROLLING FRAME (DÜZELTİLDİ)
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -10, 1, -50)
+scrollFrame.Position = UDim2.new(0, 5, 0, 45)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 50, 100)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.Parent = mainFrame
+
+-- UIListLayout - butonları sıralamak için (EN ÖNEMLİ KISIM)
+local uiList = Instance.new("UIListLayout")
+uiList.Padding = UDim.new(0, 8)  -- Butonlar arası 8 pixel boşluk
+uiList.SortOrder = Enum.SortOrder.LayoutOrder
+uiList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+uiList.Parent = scrollFrame
+
+-- ========== BUTON OLUŞTURMA ==========
+local function addButton(text, callback, color)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 320, 0, 45)
+    btn.BackgroundColor3 = color or Color3.fromRGB(45, 45, 65)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.GothamSemibold
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = true
+    btn.Parent = scrollFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = btn
+    
+    -- Hover efekti
+    btn.MouseEnter:Connect(function()
+        btn.BackgroundColor3 = color and color:Lerp(Color3.fromRGB(255,255,255), 0.2) or Color3.fromRGB(65, 65, 85)
+    end)
+    btn.MouseLeave:Connect(function()
+        btn.BackgroundColor3 = color or Color3.fromRGB(45, 45, 65)
+    end)
+    
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+local function addToggle(text, getter, setter, color)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 320, 0, 45)
+    frame.BackgroundColor3 = color or Color3.fromRGB(45, 45, 65)
+    frame.BorderSizePixel = 0
+    frame.Parent = scrollFrame
+    
+    local frameCorner = Instance.new("UICorner")
+    frameCorner.CornerRadius = UDim.new(0, 8)
+    frameCorner.Parent = frame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -70, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 13
+    label.Font = Enum.Font.GothamSemibold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Size = UDim2.new(0, 50, 0, 30)
+    toggleBtn.Position = UDim2.new(1, -58, 0, 7.5)
+    toggleBtn.BackgroundColor3 = getter() and Color3.fromRGB(80, 200, 80) or Color3.fromRGB(60, 60, 80)
+    toggleBtn.Text = getter() and "ON" or "OFF"
+    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleBtn.TextSize = 11
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.BorderSizePixel = 0
+    toggleBtn.Parent = frame
+    
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(0, 15)
+    toggleCorner.Parent = toggleBtn
+    
+    toggleBtn.MouseButton1Click:Connect(function()
+        local newState = not getter()
+        setter(newState)
+        toggleBtn.BackgroundColor3 = newState and Color3.fromRGB(80, 200, 80) or Color3.fromRGB(60, 60, 80)
+        toggleBtn.Text = newState and "ON" or "OFF"
+    end)
+end
+
+local function addSection(title)
+    local section = Instance.new("Frame")
+    section.Size = UDim2.new(0, 320, 0, 30)
+    section.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    section.BorderSizePixel = 0
+    section.Parent = scrollFrame
+    
+    local sectionCorner = Instance.new("UICorner")
+    sectionCorner.CornerRadius = UDim.new(0, 5)
+    sectionCorner.Parent = section
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "▶ " .. title
+    label.TextColor3 = Color3.fromRGB(255, 50, 100)
+    label.TextSize = 12
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = section
+end
+
+-- ========== BAŞLIKLAR VE BUTONLAR ==========
+addSection("⚡ HAREKET")
+
+addToggle("🏃 SPEED HACK (Shift)", 
+    function() return settings.speedEnabled end,
+    function(val) 
+        settings.speedEnabled = val
+        local char = player.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.WalkSpeed = val and settings.speedValue or settings.normalSpeed
+        end
+    end)
+
+addToggle("🦘 INFINITE JUMP (J)", 
+    function() return settings.jumpEnabled end,
+    function(val) 
+        settings.jumpEnabled = val
+    end)
+
+addToggle("🚪 NOCLIP (E)", 
+    function() return settings.noclipEnabled end,
+    function(val) 
+        settings.noclipEnabled = val
+    end)
+
+addToggle("💪 INFINITE STAMINA", 
+    function() return settings.infiniteStamina end,
+    function(val) 
+        settings.infiniteStamina = val
+        if val then
+            pcall(function()
+                if game.Workspace.Criminals[player.Name] then
+                    game.Workspace.Criminals[player.Name].Stamina.Value = 2^60
+                end
+            end)
+        end
+    end)
+
+addSection("⚔️ SAVAŞ")
+
+addButton("💀 KILL ALL (K)", function()
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v ~= player.Character then
+            local hum = v:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                hum.Health = 0
+            end
+        end
+    end
+end, Color3.fromRGB(180, 40, 40))
+
+addButton("👤 NO NPC", function()
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v ~= player.Character then
+            local hum = v:FindFirstChild("Humanoid")
+            if hum then hum.Health = 0 end
+        end
+    end
+end, Color3.fromRGB(180, 100, 40))
+
+addSection("🚀 IŞINLANMA")
+
+addButton("🔑 TP TO KEYCARD", function()
+    for i, v in pairs(game.Workspace.Map:GetChildren()) do
+        if v.Name == "KeyCard" then
+            player.Character:MoveTo(v.KeyCard.Position)
+        end
+    end
+end, Color3.fromRGB(80, 80, 150))
+
+addButton("🚗 TP TO EVACUATION", function()
+    local escape = workspace:FindFirstChild("BagSecuredArea") or workspace:FindFirstChild("EvacZone")
+    if escape and escape:FindFirstChild("FloorPart") then
+        player.Character.HumanoidRootPart.CFrame = escape.FloorPart.CFrame
+    end
+end, Color3.fromRGB(80, 80, 150))
+
+addButton("💰 TP BAGS TO CAR", function()
+    local escape = workspace:FindFirstChild("BagSecuredArea") or workspace:FindFirstChild("EvacZone")
+    if not escape then return end
+    local target = escape:FindFirstChild("FloorPart") or escape:FindFirstChildWhichIsA("Part")
+    if not target then return end
+    
+    for _, item in pairs(workspace:GetDescendants()) do
+        if item.Name:lower():find("bag") or item.Name:lower():find("money") then
+            pcall(function()
+                if item:IsA("BasePart") then
+                    item.CFrame = target.CFrame
+                elseif item:FindFirstChild("Handle") then
+                    item.Handle.CFrame = target.CFrame
+                end
+            end)
+        end
+    end
+end, Color3.fromRGB(80, 80, 150))
+
+addSection("💰 EŞYALAR")
+
+addButton("🎒 GET BODY BAGS", function()
+    pcall(function()
+        if game.Workspace.Criminals[player.Name] then
+            game.Workspace.Criminals[player.Name].BodyBags.Value = 10
+        end
+    end)
+end, Color3.fromRGB(80, 120, 80))
+
+addButton("🔗 GET CABLE TIES", function()
+    pcall(function()
+        if game.Workspace.Criminals[player.Name] then
+            game.Workspace.Criminals[player.Name].CableTies.Value = 10
+        end
+    end)
+end, Color3.fromRGB(80, 120, 80))
+
+addSection("👁️ GÖRÜNÜM")
+
+addToggle("👁️ ESP AÇ/KAPA", 
+    function() return settings.espEnabled end,
+    function(val) 
+        settings.espEnabled = val
+        if val then
+            task.spawn(function()
+                while settings.espEnabled and task.wait(0.5) do
+                    for _, v in pairs(workspace:GetDescendants()) do
+                        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v ~= player.Character then
+                            if not v:FindFirstChild("ESP_Box") then
+                                local box = Instance.new("BoxHandleAdornment")
+                                box.Name = "ESP_Box"
+                                box.Size = Vector3.new(4, 5, 2)
+                                box.Color3 = Color3.fromRGB(255, 0, 0)
+                                box.Transparency = 0.5
+                                box.AlwaysOnTop = true
+                                box.ZIndex = 10
+                                local root = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChildWhichIsA("Part")
+                                if root then
+                                    box.Adornee = root
+                                    box.Parent = v
+                                end
+                            end
+                        end
+                    end
+                end
+                for _, v in pairs(workspace:GetDescendants()) do
+                    if v:IsA("BoxHandleAdornment") and v.Name == "ESP_Box" then
+                        v:Destroy()
+                    end
+                end
+            end)
+        else
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BoxHandleAdornment") and v.Name == "ESP_Box" then
+                    v:Destroy()
+                end
+            end
+        end
+    end)
+
+-- ========== TUŞ KONTROLLERİ ==========
+-- J tuşu - Infinite Jump
+userInput.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.J then
+        settings.jumpEnabled = not settings.jumpEnabled
+    end
+end)
+
+-- E tuşu - Noclip
+userInput.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.E then
+        settings.noclipEnabled = not settings.noclipEnabled
+    end
+end)
+
+-- Shift - Speed
+userInput.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.LeftShift then
+        settings.speedEnabled = not settings.speedEnabled
+        local char = player.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.WalkSpeed = settings.speedEnabled and settings.speedValue or settings.normalSpeed
+        end
+    end
+end)
+
+-- K tuşu - Kill All
+userInput.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.K then
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("Model") and v:FindFirstChild("Humanoid") and v ~= player.Character then
+                local hum = v:FindFirstChild("Humanoid")
+                if hum and hum.Health > 0 then
+                    hum.Health = 0
+                end
+            end
+        end
+    end
+end)
+
+-- Infinite Jump mekaniği
+userInput.JumpRequest:Connect(function()
+    if settings.jumpEnabled then
+        local char = player.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- Noclip döngüsü
+task.spawn(function()
+    while task.wait(0.1) do
+        if settings.noclipEnabled then
+            local char = player.Character
+            if char then
+                for _, part in pairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Speed koruma
+task.spawn(function()
+    while task.wait(0.5) do
+        if settings.speedEnabled then
+            local char = player.Character
+            if char and char:FindFirstChild("Humanoid") and char.Humanoid.WalkSpeed ~= settings.speedValue then
+                char.Humanoid.WalkSpeed = settings.speedValue
+            end
+        end
+    end
+end)
+
+-- Stamina koruma
+task.spawn(function()
+    while task.wait(1) do
+        if settings.infiniteStamina then
+            pcall(function()
+                if game.Workspace.Criminals[player.Name] then
+                    game.Workspace.Criminals[player.Name].Stamina.Value = 2^60
+                end
+            end)
+        end
+    end
+end)
+
+-- ============================================
+-- MENÜ HAREKET ETTİRME (Sürükle Bırak)
+-- Bu kodu scriptinin EN SONUNA yapıştır
+-- ============================================
+
+local player = game.Players.LocalPlayer
+local mouse = player:GetMouse()
+
+-- Menü çerçevesini bul (mainFrame veya frame adında olabilir)
+local frame = nil
+
+-- Ana çerçeveyi ara
+if mainFrame then
+    frame = mainFrame
+elseif frame then
+    frame = frame
+else
+    -- workspace içinde GUI'yi bul
+    for _, gui in pairs(game.CoreGui:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            for _, child in pairs(gui:GetChildren()) do
+                if child:IsA("Frame") and child.Size.X.Offset > 100 then
+                    frame = child
+                    break
+                end
+            end
+        end
+    end
+end
+
+if frame then
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    -- Başlık çubuğunu bul (TitleBar veya başlık içeren frame)
+    local titleBar = frame:FindFirstChild("TitleBar") or frame:FindFirstChild("titleBar") or frame:FindFirstChild("Header")
+    
+    if not titleBar then
+        -- Başlık çubuğu yoksa, frame'in içindeki ilk TextLabel'i bul
+        for _, child in pairs(frame:GetChildren()) do
+            if child:IsA("TextLabel") and child.Text ~= "" then
+                titleBar = child
+                break
+            end
+        end
+    end
+    
+    if not titleBar then
+        -- Hiçbiri yoksa frame'in kendisini kullan (her yerden sürüklenebilir)
+        titleBar = frame
+    end
+    
+    titleBar.BackgroundTransparency = 0.8
+    titleBar.BorderSizePixel = 0
+    
+    -- Sürükleme başlat
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = Vector2.new(mouse.X, mouse.Y)
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    -- Sürükleme sırasında hareket ettir
+    mouse.Move:Connect(function()
+        if dragging then
+            local delta = Vector2.new(mouse.X, mouse.Y) - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    print("✅ Menü hareket ettirilebilir! (Başlık çubuğundan tutup sürükleyin)")
+else
+    warn("❌ Menü bulunamadı! frame değişkenini kontrol et.")
+end
