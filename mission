@@ -5,75 +5,159 @@
     ██║╚██╔╝██║██╔══██║ ██╔██╗ ██║██║╚██╗██║██╔══╝  
     ██║ ╚═╝ ██║██║  ██║██╔╝ ██╗██║██║ ╚████║███████╗
     ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝
-        AUTO ESCAPE + 4 SANİYE RELOAD + REFILL
-               v12.0 MOON 2035
+     FPS BOOST + AUTO ESCAPE + REFILL RELOAD v13.0
+               MOON EVRENİ 2035
 --]]
 
 (function()
     local player = game.Players.LocalPlayer
     local rs = game:GetService("ReplicatedStorage")
     local vi = game:GetService("VirtualInputManager")
+    local runService = game:GetService("RunService")
+    local lighting = game:GetService("Lighting")
+    local workspace = game:GetService("Workspace")
+    local players = game:GetService("Players")
     
-    local assets = rs:FindFirstChild("Assets")
-    local remotes = assets and assets:FindFirstChild("Remotes")
-    local POST = remotes and remotes:FindFirstChild("POST")
-    local GET = remotes and remotes:FindFirstChild("GET")
-    
-    if not POST or not GET then return end
-    
-    local character = player.Character or player.CharacterAdded:Wait()
-    local root = character:WaitForChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    
-    local attackEnabled = true
-    local isReloading = false
-    local isWaitingForRetry = false
-    local titansKilled = 0
-    local originalCFrame = nil
-    local refillPosition = nil
-    local refillPart = nil
-    
-    -- ========== AUTO ESCAPE ==========
-    local function setupAutoEscape()
-        print("[AOTR] 🚪 Auto Escape başlatılıyor...")
+    -- ========== FPS BOOST AYARLARI ==========
+    local function fpsBoost()
+        print("[FPS-BOOST] 🚀 FPS Optimizasyonu başlatılıyor...")
         
-        -- Escape butonunu bul ve tıkla
-        local function clickEscapeButton()
-            local playerGui = player:FindFirstChild("PlayerGui")
-            if playerGui then
-                local interface = playerGui:FindFirstChild("Interface")
-                if interface then
-                    local buttons = interface:FindFirstChild("Buttons")
-                    if buttons then
-                        for _, btn in pairs(buttons:GetChildren()) do
-                            if btn:IsA("ImageButton") or btn:IsA("TextButton") then
-                                local btnName = btn.Name:lower()
-                                if btnName:find("escape") or btnName:find("exit") or btnName:find("leave") or btnName:find("quit") then
-                                    pcall(function()
-                                        local x = btn.AbsolutePosition.X + btn.AbsoluteSize.X / 2
-                                        local y = btn.AbsolutePosition.Y + btn.AbsoluteSize.Y / 2
-                                        vi:SendMouseButtonEvent(x, y, 0, true, game, 0)
-                                        task.wait(0.05)
-                                        vi:SendMouseButtonEvent(x, y, 0, false, game, 0)
-                                        print("[AOTR] ✅ Escape butonuna tıklandı!")
-                                    end)
-                                end
+        -- 1. Lighting ayarları (ışık kalitesini düşür)
+        pcall(function()
+            lighting.GlobalShadows = false
+            lighting.FogEnd = 1000
+            lighting.FogStart = 500
+            lighting.Brightness = 1
+            lighting.ClockTime = 14
+            lighting.OutdoorAmbient = Color3.fromRGB(80, 80, 80)
+            lighting.Ambient = Color3.fromRGB(80, 80, 80)
+            lighting.ColorShift_Top = Color3.fromRGB(0, 0, 0)
+            lighting.ColorShift_Bottom = Color3.fromRGB(0, 0, 0)
+        end)
+        
+        -- 2. Workspace ayarları
+        pcall(function()
+            workspace.Gravity = 196.2
+            workspace.FallenPartsDestroyHeight = -500
+            workspace.DistributedGameTime = 0
+        end)
+        
+        -- 3. Gereksiz efektleri kapat
+        pcall(function()
+            settings().Rendering.QualityLevel = 1
+            settings().Rendering.EffectsQuality = 1
+        end)
+        
+        -- 4. Uzaktaki partları gizle (görünmez yap)
+        task.spawn(function()
+            while true do
+                task.wait(5)
+                pcall(function()
+                    for _, obj in pairs(workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") and not obj.Parent:IsA("Titans") then
+                            local dist = (obj.Position - (player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.Position or Vector3.zero)).Magnitude
+                            if dist > 500 then
+                                obj.Transparency = 1
+                                obj.CanCollide = false
                             end
                         end
                     end
+                end)
+            end
+        end)
+        
+        -- 5. Gereksiz decal ve texture'ları temizle
+        pcall(function()
+            for _, decal in pairs(workspace:GetDescendants()) do
+                if decal:IsA("Decal") or decal:IsA("Texture") then
+                    decal.Transparency = 1
                 end
             end
-        end
+        end)
         
-        -- Slash_Escape remote'u ile kaçış
+        -- 6. Particle emitter'ları kapat
+        pcall(function()
+            for _, particle in pairs(workspace:GetDescendants()) do
+                if particle:IsA("ParticleEmitter") then
+                    particle.Enabled = false
+                    particle.Rate = 0
+                end
+            end
+        end)
+        
+        -- 7. Gölgeleri kapat
+        pcall(function()
+            for _, part in pairs(workspace:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CastShadow = false
+                end
+            end
+        end)
+        
+        -- 8. Terrain detaylarını düşür
+        pcall(function()
+            local terrain = workspace.Terrain
+            if terrain then
+                terrain.WaterWaveSize = 0
+                terrain.WaterWaveSpeed = 0
+                terrain.WaterReflectance = 0
+                terrain.WaterRefraction = 0
+            end
+        end)
+        
+        print("[FPS-BOOST] ✅ FPS optimizasyonu tamamlandı!")
+    end
+    
+    -- ========== MEMORY TEMİZLİĞİ ==========
+    local function memoryCleanup()
+        task.spawn(function()
+            while true do
+                task.wait(30)
+                pcall(function()
+                    collectgarbage("collect")
+                    collectgarbage("step", 100)
+                end)
+            end
+        end)
+        
+        task.spawn(function()
+            while true do
+                task.wait(60)
+                pcall(function()
+                    for _, v in pairs(game:GetDescendants()) do
+                        if v:IsA("Sound") and v.Playing == false then
+                            v:Destroy()
+                        end
+                    end
+                end)
+            end
+        end)
+    end
+    
+    -- ========== HIZ AYARI ==========
+    local function setupSpeed()
+        pcall(function()
+            local character = player.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = 100
+                    humanoid.JumpPower = 80
+                end
+            end
+        end)
+    end
+    
+    -- ========== AUTO ESCAPE ==========
+    local function setupAutoEscape(POST)
+        print("[AOTR] 🚪 Auto Escape başlatılıyor...")
+        
         local function slashEscape()
             pcall(function()
                 POST:FireServer("Attacks", "Slash_Escape")
-                print("[AOTR] ⚔️ Slash_Escape gönderildi!")
             end)
         end
         
-        -- Escape butonu çıkınca otomatik bas
         local function monitorEscapeButton()
             local playerGui = player:FindFirstChild("PlayerGui")
             if playerGui then
@@ -85,7 +169,6 @@
                             task.wait(0.05)
                             local btnName = btn.Name:lower()
                             if btnName:find("escape") or btnName:find("exit") or btnName:find("leave") or btnName:find("quit") then
-                                print("[AOTR] 🚨 Escape butonu çıktı! Otomatik basılıyor...")
                                 pcall(function()
                                     local x = btn.AbsolutePosition.X + btn.AbsoluteSize.X / 2
                                     local y = btn.AbsolutePosition.Y + btn.AbsoluteSize.Y / 2
@@ -103,38 +186,13 @@
             end
         end
         
-        -- Eğer titan tutarsa otomatik kaçış
-        local function autoEscapeWhenGrabbed()
-            task.spawn(function()
-                while true do
-                    task.wait(0.2)
-                    if attackEnabled and not isReloading and not isWaitingForRetry then
-                        -- Titan tarafından tutuldu mu kontrol et
-                        local humanoidRoot = character:FindFirstChild("HumanoidRootPart")
-                        if humanoidRoot then
-                            local grabAttachments = humanoidRoot:FindFirstChild("GrabAttach")
-                            if grabAttachments then
-                                print("[AOTR] 🏃 Titan tarafından tutuldu! Kaçış başlatılıyor...")
-                                slashEscape()
-                                clickEscapeButton()
-                                task.wait(0.1)
-                                slashEscape()
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-        
         monitorEscapeButton()
-        autoEscapeWhenGrabbed()
-        print("[AOTR] ✅ Auto Escape aktif!")
     end
     
-    -- ========== GAS REFILL KESIN BUL ==========
+    -- ========== GAS REFILL BUL ==========
+    local refillPosition = nil
+    
     local function findGasRefill()
-        print("[AOTR] 🔍 Gas Refill aranıyor...")
-        
         local climbable = workspace:FindFirstChild("Climbable")
         if climbable then
             local walls = climbable:FindFirstChild("_Walls")
@@ -145,9 +203,8 @@
                     if gasTanks then
                         local refill = gasTanks:FindFirstChild("Refill")
                         if refill and refill:IsA("BasePart") then
-                            refillPart = refill
                             refillPosition = refill.Position
-                            print("[AOTR] ✅ Gas Refill bulundu! Konum: " .. tostring(refillPosition))
+                            print("[AOTR] ✅ Gas Refill bulundu!")
                             return true
                         end
                     end
@@ -157,297 +214,248 @@
         
         for _, obj in pairs(workspace:GetDescendants()) do
             if obj:IsA("BasePart") and obj.Name == "Refill" then
-                refillPart = obj
                 refillPosition = obj.Position
-                print("[AOTR] ✅ Refill bulundu: " .. obj:GetFullName())
+                print("[AOTR] ✅ Refill bulundu!")
                 return true
             end
         end
-        
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj.Name == "GasTanks" and obj:IsA("Model") then
-                local anyPart = obj:FindFirstChildOfClass("BasePart")
-                if anyPart then
-                    refillPart = anyPart
-                    refillPosition = anyPart.Position
-                    print("[AOTR] ⚠️ GasTanks bulundu (Refill yok): " .. anyPart:GetFullName())
-                    return true
-                end
-            end
-        end
-        
-        print("[AOTR] ❌ Refill bulunamadı!")
         return false
     end
     
-    -- ========== BIÇAK KIRIK MI ==========
-    local function isBladeBroken()
-        local rig = character:FindFirstChild("Rig_" .. player.Name)
-        if rig then
-            local leftHand = rig:FindFirstChild("LeftHand")
-            if leftHand then
-                local blade1 = leftHand:FindFirstChild("Blade_1")
-                if blade1 and blade1.Transparency == 1 then
-                    return true
+    -- ========== ANA SİSTEM ==========
+    local function startSystem()
+        local character = player.Character or player.CharacterAdded:Wait()
+        local root = character:WaitForChild("HumanoidRootPart")
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        
+        local assets = rs:FindFirstChild("Assets")
+        local remotes = assets and assets:FindFirstChild("Remotes")
+        local POST = remotes and remotes:FindFirstChild("POST")
+        local GET = remotes and remotes:FindFirstChild("GET")
+        
+        if not POST or not GET then return end
+        
+        setupAutoEscape(POST)
+        
+        local attackEnabled = true
+        local isReloading = false
+        local isWaitingForRetry = false
+        local titansKilled = 0
+        local originalCFrame = nil
+        
+        -- ========== BIÇAK KONTROL ==========
+        local function isBladeBroken()
+            local rig = character:FindFirstChild("Rig_" .. player.Name)
+            if rig then
+                local leftHand = rig:FindFirstChild("LeftHand")
+                if leftHand then
+                    local blade1 = leftHand:FindFirstChild("Blade_1")
+                    if blade1 and blade1.Transparency == 1 then
+                        return true
+                    end
+                end
+                local rightHand = rig:FindFirstChild("RightHand")
+                if rightHand then
+                    local blade2 = rightHand:FindFirstChild("Blade_2")
+                    if blade2 and blade2.Transparency == 1 then
+                        return true
+                    end
                 end
             end
-            local rightHand = rig:FindFirstChild("RightHand")
-            if rightHand then
-                local blade2 = rightHand:FindFirstChild("Blade_2")
-                if blade2 and blade2.Transparency == 1 then
-                    return true
-                end
-            end
-        end
-        return false
-    end
-    
-    -- ========== KESIN IŞINLANMA ==========
-    local function teleportToPosition(pos)
-        if not root then return false end
-        local success, err = pcall(function()
-            root.CFrame = CFrame.new(pos)
-        end)
-        if success then
-            print("[AOTR] ✨ Işınlandı: " .. tostring(pos))
-            return true
-        else
-            print("[AOTR] ❌ Işınlanma hatası: " .. tostring(err))
             return false
         end
-    end
-    
-    -- ========== GAS REFILL'E IŞINLAN + R BAS ==========
-    local function teleportToGasRefillAndReload()
-        print("[AOTR] ═══════════════════════════════════════════")
-        print("[AOTR] 🔴 GAS REFILL'E IŞINLANMA BAŞLATILIYOR!")
         
-        if not refillPosition then
-            if not findGasRefill() then
-                print("[AOTR] ❌ Refill bulunamadı, iptal!")
-                isReloading = false
-                attackEnabled = true
-                return false
+        -- ========== IŞINLANMA ==========
+        local function teleportToPosition(pos)
+            pcall(function()
+                root.CFrame = CFrame.new(pos)
+            end)
+        end
+        
+        -- ========== REFILL'E IŞINLAN + R BAS ==========
+        local function teleportToGasRefillAndReload()
+            if not refillPosition then
+                if not findGasRefill() then
+                    isReloading = false
+                    attackEnabled = true
+                    return
+                end
             end
-        end
-        
-        originalCFrame = root.CFrame
-        print("[AOTR] 📍 Orijinal pozisyon: " .. tostring(originalCFrame.Position))
-        
-        local targetPos = Vector3.new(refillPosition.X, refillPosition.Y + 3, refillPosition.Z)
-        print("[AOTR] 🎯 Hedef konum: " .. tostring(targetPos))
-        
-        task.wait(0.1)
-        teleportToPosition(targetPos)
-        task.wait(0.2)
-        
-        local groundPos = Vector3.new(refillPosition.X, refillPosition.Y + 1, refillPosition.Z)
-        teleportToPosition(groundPos)
-        task.wait(0.15)
-        
-        print("[AOTR] 🔫 REFILL NOKTASINDA R BASILIYOR!")
-        
-        task.wait(0.2)
-        
-        for i = 1, 10 do
-            pcall(function()
-                vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                task.wait(0.03)
-                vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                task.wait(0.02)
-            end)
-        end
-        
-        for i = 1, 5 do
-            pcall(function()
-                vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                task.wait(0.15)
-                vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                task.wait(0.05)
-            end)
-        end
-        
-        pcall(function()
-            vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-            task.wait(0.5)
-            vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-        end)
-        
-        print("[AOTR] ✅ R basımı tamamlandı (15+ kez)")
-        
-        task.wait(0.5)
-        
-        if originalCFrame then
-            print("[AOTR] 🔄 Orijinal pozisyona dönülüyor...")
-            teleportToPosition(originalCFrame.Position)
-        end
-        
-        task.wait(0.3)
-        
-        print("[AOTR] ✅ GAS REFILL RELOAD TAMAMLANDI!")
-        print("[AOTR] ═══════════════════════════════════════════")
-        
-        isReloading = false
-        attackEnabled = true
-        return true
-    end
-    
-    -- ========== NORMAL RELOAD ==========
-    local function doNormalReload()
-        if isReloading then return false end
-        isReloading = true
-        attackEnabled = false
-        
-        print("[AOTR] 🔫 Normal reload başladı (5 kez R)...")
-        
-        for i = 1, 5 do
-            pcall(function()
-                vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                task.wait(0.05)
-                vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                task.wait(0.05)
-            end)
-        end
-        
-        print("[AOTR] ⏳ 4 saniye bekleniyor...")
-        task.wait(4)
-        
-        if isBladeBroken() then
-            print("[AOTR] ⚠️ 4 saniyede reload olmadı! Gas Refill'e gidiliyor...")
-            teleportToGasRefillAndReload()
-        else
-            print("[AOTR] ✅ Reload başarılı!")
+            
+            originalCFrame = root.CFrame
+            
+            local targetPos = Vector3.new(refillPosition.X, refillPosition.Y + 3, refillPosition.Z)
+            teleportToPosition(targetPos)
+            task.wait(0.15)
+            
+            local groundPos = Vector3.new(refillPosition.X, refillPosition.Y + 1, refillPosition.Z)
+            teleportToPosition(groundPos)
+            task.wait(0.1)
+            
+            for i = 1, 12 do
+                pcall(function()
+                    vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                    task.wait(0.03)
+                    vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                    task.wait(0.02)
+                end)
+            end
+            
+            task.wait(0.3)
+            
+            if originalCFrame then
+                teleportToPosition(originalCFrame.Position)
+            end
+            
             isReloading = false
             attackEnabled = true
         end
         
-        return true
-    end
-    
-    -- ========== BIÇAK MONİTÖRÜ ==========
-    local function startBladeMonitor()
+        -- ========== NORMAL RELOAD ==========
+        local function doNormalReload()
+            if isReloading then return end
+            isReloading = true
+            attackEnabled = false
+            
+            for i = 1, 5 do
+                pcall(function()
+                    vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                    task.wait(0.05)
+                    vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                    task.wait(0.05)
+                end)
+            end
+            
+            task.wait(4)
+            
+            if isBladeBroken() then
+                teleportToGasRefillAndReload()
+            else
+                isReloading = false
+                attackEnabled = true
+            end
+        end
+        
+        -- ========== BIÇAK MONİTÖRÜ ==========
         task.spawn(function()
             while true do
                 task.wait(0.3)
                 if attackEnabled and not isReloading and not isWaitingForRetry then
                     if isBladeBroken() then
-                        print("[AOTR] ⚠️ Bıçak kırıldı!")
                         doNormalReload()
                     end
                 end
             end
         end)
-    end
-    
-    -- ========== TİTANLARI BUL ==========
-    local function getAllTitans()
-        local list = {}
-        local tf = workspace:FindFirstChild("Titans")
-        if not tf then return list end
         
-        for _, t in pairs(tf:GetChildren()) do
-            if t:IsA("Model") then
-                local h = t:FindFirstChildOfClass("Humanoid")
-                if h and h.Health > 0 then
-                    local hb = t:FindFirstChild("Hitboxes")
-                    if hb then
-                        local hit = hb:FindFirstChild("Hit")
-                        if hit then
-                            local nape = hit:FindFirstChild("Nape")
-                            if nape then
-                                table.insert(list, {
-                                    titan = t,
-                                    nape = nape,
-                                    name = t.Name,
-                                    pos = nape.Position
-                                })
+        -- ========== TİTANLARI BUL ==========
+        local function getAllTitans()
+            local list = {}
+            local tf = workspace:FindFirstChild("Titans")
+            if not tf then return list end
+            
+            for _, t in pairs(tf:GetChildren()) do
+                if t:IsA("Model") then
+                    local h = t:FindFirstChildOfClass("Humanoid")
+                    if h and h.Health > 0 then
+                        local hb = t:FindFirstChild("Hitboxes")
+                        if hb then
+                            local hit = hb:FindFirstChild("Hit")
+                            if hit then
+                                local nape = hit:FindFirstChild("Nape")
+                                if nape then
+                                    table.insert(list, {
+                                        nape = nape,
+                                        pos = nape.Position
+                                    })
+                                end
                             end
                         end
                     end
                 end
             end
+            return list
         end
-        return list
-    end
-    
-    -- ========== VURUŞ ==========
-    local function hitTitan(nape, pos)
-        if not attackEnabled or isReloading or isWaitingForRetry then return end
         
-        pcall(function()
-            root.CFrame = CFrame.new(pos.X, pos.Y, pos.Z)
-        end)
-        task.wait(0.002)
-        
-        pcall(function()
-            vi:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-        end)
-        task.wait(0.002)
-        pcall(function()
-            vi:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-        end)
-        
-        if originalCFrame then
+        -- ========== VURUŞ ==========
+        local function hitTitan(nape, pos)
+            if not attackEnabled or isReloading or isWaitingForRetry then return end
+            
             pcall(function()
-                root.CFrame = originalCFrame
+                root.CFrame = CFrame.new(pos.X, pos.Y, pos.Z)
+            end)
+            task.wait(0.002)
+            
+            pcall(function()
+                vi:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            end)
+            task.wait(0.002)
+            pcall(function()
+                vi:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+            end)
+            
+            if originalCFrame then
+                pcall(function()
+                    root.CFrame = originalCFrame
+                end)
+            end
+            
+            pcall(function()
+                POST:FireServer("Attacks", "Slash", true)
+            end)
+            task.wait(0.001)
+            pcall(function()
+                GET:InvokeServer("Hitboxes", "Register", nape, 999999, 999999)
             end)
         end
         
-        pcall(function()
-            POST:FireServer("Attacks", "Slash", true)
-        end)
-        task.wait(0.001)
-        pcall(function()
-            GET:InvokeServer("Hitboxes", "Register", nape, 999999, 999999)
-        end)
-    end
-    
-    -- ========== TİTAN TEMİZLE ==========
-    local function clearTitans()
-        if isReloading or isWaitingForRetry then return end
-        
-        local titans = getAllTitans()
-        if #titans == 0 then
-            isWaitingForRetry = true
-            return
-        end
-        
-        for _, tData in pairs(titans) do
-            if attackEnabled and not isReloading and not isWaitingForRetry then
-                hitTitan(tData.nape, tData.pos)
-                titansKilled = titansKilled + 1
-                task.wait(0.008)
+        -- ========== TİTAN TEMİZLE ==========
+        local function clearTitans()
+            if isReloading or isWaitingForRetry then return end
+            
+            local titans = getAllTitans()
+            if #titans == 0 then
+                isWaitingForRetry = true
+                return
+            end
+            
+            for _, tData in pairs(titans) do
+                if attackEnabled and not isReloading and not isWaitingForRetry then
+                    hitTitan(tData.nape, tData.pos)
+                    titansKilled = titansKilled + 1
+                    task.wait(0.008)
+                end
             end
         end
-    end
-    
-    -- ========== RETRY ==========
-    local function doRetry()
-        local playerGui = player:FindFirstChild("PlayerGui")
-        if playerGui then
-            local interface = playerGui:FindFirstChild("Interface")
-            if interface then
-                local rewards = interface:FindFirstChild("Rewards")
-                if rewards then
-                    local main = rewards:FindFirstChild("Main")
-                    if main then
-                        local info = main:FindFirstChild("Info")
-                        if info then
-                            local mainInfo = info:FindFirstChild("Main")
-                            if mainInfo then
-                                local buttons = mainInfo:FindFirstChild("Buttons")
-                                if buttons then
-                                    local retry = buttons:FindFirstChild("Retry")
-                                    if retry then
-                                        local title = retry:FindFirstChild("Title")
-                                        if title then
-                                            pcall(function()
-                                                local x = title.AbsolutePosition.X + title.AbsoluteSize.X / 2
-                                                local y = title.AbsolutePosition.Y + title.AbsoluteSize.Y / 2 + 45
-                                                vi:SendMouseButtonEvent(x, y, 0, true, game, 0)
-                                                task.wait(0.05)
-                                                vi:SendMouseButtonEvent(x, y, 0, false, game, 0)
-                                            end)
+        
+        -- ========== RETRY ==========
+        local function doRetry()
+            local playerGui = player:FindFirstChild("PlayerGui")
+            if playerGui then
+                local interface = playerGui:FindFirstChild("Interface")
+                if interface then
+                    local rewards = interface:FindFirstChild("Rewards")
+                    if rewards then
+                        local main = rewards:FindFirstChild("Main")
+                        if main then
+                            local info = main:FindFirstChild("Info")
+                            if info then
+                                local mainInfo = info:FindFirstChild("Main")
+                                if mainInfo then
+                                    local buttons = mainInfo:FindFirstChild("Buttons")
+                                    if buttons then
+                                        local retry = buttons:FindFirstChild("Retry")
+                                        if retry then
+                                            local title = retry:FindFirstChild("Title")
+                                            if title then
+                                                pcall(function()
+                                                    local x = title.AbsolutePosition.X + title.AbsoluteSize.X / 2
+                                                    local y = title.AbsolutePosition.Y + title.AbsoluteSize.Y / 2 + 45
+                                                    vi:SendMouseButtonEvent(x, y, 0, true, game, 0)
+                                                    task.wait(0.05)
+                                                    vi:SendMouseButtonEvent(x, y, 0, false, game, 0)
+                                                end)
+                                            end
                                         end
                                     end
                                 end
@@ -456,31 +464,22 @@
                     end
                 end
             end
+            task.wait(2)
         end
-        task.wait(2)
-    end
-    
-    -- ========== ANA DÖNGÜ ==========
-    local function mainLoop()
+        
+        -- ========== ANA DÖNGÜ ==========
         task.spawn(function()
             while true do
                 titansKilled = 0
                 isWaitingForRetry = false
                 attackEnabled = true
-                
                 originalCFrame = root.CFrame
-                print("[AOTR] 🎯 Ana döngü başladı!")
                 
-                while true do
-                    if #getAllTitans() == 0 then
-                        print("[AOTR] 🏆 Tüm titanlar temizlendi!")
-                        break
-                    end
+                while #getAllTitans() > 0 do
                     clearTitans()
                     task.wait(0.05)
                 end
                 
-                print("[AOTR] 🔄 Retry yapılıyor...")
                 isWaitingForRetry = true
                 attackEnabled = false
                 doRetry()
@@ -489,55 +488,63 @@
                 task.wait(0.5)
             end
         end)
-    end
-    
-    -- ========== NAPE GENİŞLET ==========
-    local function extendNape()
-        local tf = workspace:FindFirstChild("Titans")
-        if not tf then return end
-        for _, t in pairs(tf:GetChildren()) do
-            if t:IsA("Model") then
-                local hb = t:FindFirstChild("Hitboxes")
-                if hb then
-                    local hit = hb:FindFirstChild("Hit")
-                    if hit then
-                        local nape = hit:FindFirstChild("Nape")
-                        if nape then
-                            nape.Size = Vector3.new(150, 120, 150)
-                            nape.Transparency = 0.2
+        
+        -- ========== NAPE GENİŞLET ==========
+        local function extendNape()
+            local tf = workspace:FindFirstChild("Titans")
+            if not tf then return end
+            for _, t in pairs(tf:GetChildren()) do
+                if t:IsA("Model") then
+                    local hb = t:FindFirstChild("Hitboxes")
+                    if hb then
+                        local hit = hb:FindFirstChild("Hit")
+                        if hit then
+                            local nape = hit:FindFirstChild("Nape")
+                            if nape then
+                                nape.Size = Vector3.new(150, 120, 150)
+                                nape.Transparency = 0.2
+                            end
                         end
                     end
                 end
             end
         end
+        
+        extendNape()
+        workspace:FindFirstChild("Titans").ChildAdded:Connect(function()
+            task.wait(0.1)
+            extendNape()
+        end)
     end
     
     -- ========== BAŞLAT ==========
+    fpsBoost()
+    memoryCleanup()
+    setupSpeed()
     findGasRefill()
-    extendNape()
-    setupAutoEscape()  -- AUTO ESCAPE AKTİF
-    startBladeMonitor()
-    mainLoop()
+    
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        setupSpeed()
+    end)
+    
+    startSystem()
     
     print("═══════════════════════════════════════════════════════════")
-    print("     AUTO ESCAPE + 4 SANİYE RELOAD + REFILL v12.0")
+    print("     FPS BOOST + AUTO ESCAPE + REFILL RELOAD v13.0")
     print("═══════════════════════════════════════════════════════════")
-    print("🚪 AUTO ESCAPE ÖZELLİKLERİ:")
-    print("   • Escape butonu çıkınca OTOMATİK TIKLA")
-    print("   • Titan tutunca OTOMATİK Slash_Escape")
-    print("   • Slash_Escape remote'u gönder")
+    print("⚡ FPS BOOST ÖZELLİKLERİ:")
+    print("   • Lighting kalitesi düşürüldü (gölgeler kapalı)")
+    print("   • Uzaktaki objeler görünmez yapıldı (500 studs)")
+    print("   • Particle emitter'lar kapatıldı")
+    print("   • Decal/Texture'lar temizlendi")
+    print("   • Gölgeler kapatıldı (CastShadow = false)")
+    print("   • Terrain detayları düşürüldü")
+    print("   • 30 saniyede bir memory temizliği")
     print("")
-    print("⚔️ DİĞER ÖZELLİKLER:")
-    print("   • Bıçak kırılınca → Normal R bas (5 kez)")
-    print("   • 4 saniye bekle")
-    print("   • Hala kırıksa → Gas Refill'e ışınlan")
-    print("   • 15+ kez R bas → Geri dön")
+    print("🚪 AUTO ESCAPE AKTİF")
+    print("⚔️ 4 SANİYE RELOAD + REFILL IŞINLANMA AKTİF")
     print("═══════════════════════════════════════════════════════════")
-    
-    if refillPosition then
-        print("🎯 REFILL KONUMU: " .. tostring(refillPosition))
-        print("✅ Sistem HAZIR!")
-    end
     
     print = function() end
     warn = function() end
