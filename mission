@@ -5,8 +5,8 @@
     ██║╚██╔╝██║██╔══██║ ██╔██╗ ██║██║╚██╗██║██╔══╝  
     ██║ ╚═╝ ██║██║  ██║██╔╝ ██╗██║██║ ╚████║███████╗
     ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝
-        AUTO ESCAPE + 4 SANİYE RELOAD + REFILL
-               v12.0 MOON 2035
+      10 SANİYE RELOAD YOKSA GAS REFILL'E GİT
+               v13.0 MOON 2035
 --]]
 
 (function()
@@ -33,11 +33,14 @@
     local refillPosition = nil
     local refillPart = nil
     
+    -- RELOAD TAKİBİ İÇİN
+    local lastReloadTime = 0
+    local reloadCounter = 0
+    local noReloadStartTime = nil
+    local isMonitoringNoReload = false
+    
     -- ========== AUTO ESCAPE ==========
     local function setupAutoEscape()
-        print("[AOTR] 🚪 Auto Escape başlatılıyor...")
-        
-        -- Escape butonunu bul ve tıkla
         local function clickEscapeButton()
             local playerGui = player:FindFirstChild("PlayerGui")
             if playerGui then
@@ -55,7 +58,6 @@
                                         vi:SendMouseButtonEvent(x, y, 0, true, game, 0)
                                         task.wait(0.05)
                                         vi:SendMouseButtonEvent(x, y, 0, false, game, 0)
-                                        print("[AOTR] ✅ Escape butonuna tıklandı!")
                                     end)
                                 end
                             end
@@ -65,15 +67,12 @@
             end
         end
         
-        -- Slash_Escape remote'u ile kaçış
         local function slashEscape()
             pcall(function()
                 POST:FireServer("Attacks", "Slash_Escape")
-                print("[AOTR] ⚔️ Slash_Escape gönderildi!")
             end)
         end
         
-        -- Escape butonu çıkınca otomatik bas
         local function monitorEscapeButton()
             local playerGui = player:FindFirstChild("PlayerGui")
             if playerGui then
@@ -85,7 +84,6 @@
                             task.wait(0.05)
                             local btnName = btn.Name:lower()
                             if btnName:find("escape") or btnName:find("exit") or btnName:find("leave") or btnName:find("quit") then
-                                print("[AOTR] 🚨 Escape butonu çıktı! Otomatik basılıyor...")
                                 pcall(function()
                                     local x = btn.AbsolutePosition.X + btn.AbsoluteSize.X / 2
                                     local y = btn.AbsolutePosition.Y + btn.AbsoluteSize.Y / 2
@@ -103,18 +101,15 @@
             end
         end
         
-        -- Eğer titan tutarsa otomatik kaçış
         local function autoEscapeWhenGrabbed()
             task.spawn(function()
                 while true do
                     task.wait(0.2)
                     if attackEnabled and not isReloading and not isWaitingForRetry then
-                        -- Titan tarafından tutuldu mu kontrol et
                         local humanoidRoot = character:FindFirstChild("HumanoidRootPart")
                         if humanoidRoot then
                             local grabAttachments = humanoidRoot:FindFirstChild("GrabAttach")
                             if grabAttachments then
-                                print("[AOTR] 🏃 Titan tarafından tutuldu! Kaçış başlatılıyor...")
                                 slashEscape()
                                 clickEscapeButton()
                                 task.wait(0.1)
@@ -128,13 +123,10 @@
         
         monitorEscapeButton()
         autoEscapeWhenGrabbed()
-        print("[AOTR] ✅ Auto Escape aktif!")
     end
     
-    -- ========== GAS REFILL KESIN BUL ==========
+    -- ========== GAS REFILL BUL ==========
     local function findGasRefill()
-        print("[AOTR] 🔍 Gas Refill aranıyor...")
-        
         local climbable = workspace:FindFirstChild("Climbable")
         if climbable then
             local walls = climbable:FindFirstChild("_Walls")
@@ -147,7 +139,6 @@
                         if refill and refill:IsA("BasePart") then
                             refillPart = refill
                             refillPosition = refill.Position
-                            print("[AOTR] ✅ Gas Refill bulundu! Konum: " .. tostring(refillPosition))
                             return true
                         end
                     end
@@ -159,7 +150,6 @@
             if obj:IsA("BasePart") and obj.Name == "Refill" then
                 refillPart = obj
                 refillPosition = obj.Position
-                print("[AOTR] ✅ Refill bulundu: " .. obj:GetFullName())
                 return true
             end
         end
@@ -170,13 +160,11 @@
                 if anyPart then
                     refillPart = anyPart
                     refillPosition = anyPart.Position
-                    print("[AOTR] ⚠️ GasTanks bulundu (Refill yok): " .. anyPart:GetFullName())
                     return true
                 end
             end
         end
         
-        print("[AOTR] ❌ Refill bulunamadı!")
         return false
     end
     
@@ -202,105 +190,23 @@
         return false
     end
     
-    -- ========== KESIN IŞINLANMA ==========
-    local function teleportToPosition(pos)
-        if not root then return false end
-        local success, err = pcall(function()
-            root.CFrame = CFrame.new(pos)
-        end)
-        if success then
-            print("[AOTR] ✨ Işınlandı: " .. tostring(pos))
-            return true
-        else
-            print("[AOTR] ❌ Işınlanma hatası: " .. tostring(err))
-            return false
-        end
-    end
-    
-    -- ========== GAS REFILL'E IŞINLAN + R BAS ==========
-    local function teleportToGasRefillAndReload()
-        print("[AOTR] ═══════════════════════════════════════════")
-        print("[AOTR] 🔴 GAS REFILL'E IŞINLANMA BAŞLATILIYOR!")
-        
-        if not refillPosition then
-            if not findGasRefill() then
-                print("[AOTR] ❌ Refill bulunamadı, iptal!")
-                isReloading = false
-                attackEnabled = true
-                return false
-            end
-        end
-        
-        originalCFrame = root.CFrame
-        print("[AOTR] 📍 Orijinal pozisyon: " .. tostring(originalCFrame.Position))
-        
-        local targetPos = Vector3.new(refillPosition.X, refillPosition.Y + 3, refillPosition.Z)
-        print("[AOTR] 🎯 Hedef konum: " .. tostring(targetPos))
-        
-        task.wait(0.1)
-        teleportToPosition(targetPos)
-        task.wait(0.2)
-        
-        local groundPos = Vector3.new(refillPosition.X, refillPosition.Y + 1, refillPosition.Z)
-        teleportToPosition(groundPos)
-        task.wait(0.15)
-        
-        print("[AOTR] 🔫 REFILL NOKTASINDA R BASILIYOR!")
-        
-        task.wait(0.2)
-        
-        for i = 1, 10 do
-            pcall(function()
-                vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                task.wait(0.03)
-                vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                task.wait(0.02)
-            end)
-        end
-        
-        for i = 1, 5 do
-            pcall(function()
-                vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                task.wait(0.15)
-                vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                task.wait(0.05)
-            end)
-        end
-        
-        pcall(function()
-            vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-            task.wait(0.5)
-            vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-        end)
-        
-        print("[AOTR] ✅ R basımı tamamlandı (15+ kez)")
-        
-        task.wait(0.5)
-        
-        if originalCFrame then
-            print("[AOTR] 🔄 Orijinal pozisyona dönülüyor...")
-            teleportToPosition(originalCFrame.Position)
-        end
-        
-        task.wait(0.3)
-        
-        print("[AOTR] ✅ GAS REFILL RELOAD TAMAMLANDI!")
-        print("[AOTR] ═══════════════════════════════════════════")
-        
-        isReloading = false
-        attackEnabled = true
-        return true
-    end
-    
-    -- ========== NORMAL RELOAD ==========
-    local function doNormalReload()
+    -- ========== RELOAD YAP ==========
+    local function doReload()
         if isReloading then return false end
         isReloading = true
         attackEnabled = false
         
-        print("[AOTR] 🔫 Normal reload başladı (5 kez R)...")
+        -- Reload zamanını güncelle
+        lastReloadTime = tick()
+        reloadCounter = reloadCounter + 1
         
-        for i = 1, 5 do
+        -- 10 saniye reload yoksa kontrolünü sıfırla
+        noReloadStartTime = nil
+        isMonitoringNoReload = false
+        
+        print("[AOTR] 🔫 Reload yapılıyor... (Toplam reload sayısı: " .. reloadCounter .. ")")
+        
+        for i = 1, 6 do
             pcall(function()
                 vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
                 task.wait(0.05)
@@ -309,30 +215,89 @@
             end)
         end
         
-        print("[AOTR] ⏳ 4 saniye bekleniyor...")
-        task.wait(4)
+        task.wait(1.5)
         
-        if isBladeBroken() then
-            print("[AOTR] ⚠️ 4 saniyede reload olmadı! Gas Refill'e gidiliyor...")
-            teleportToGasRefillAndReload()
-        else
-            print("[AOTR] ✅ Reload başarılı!")
-            isReloading = false
-            attackEnabled = true
-        end
+        isReloading = false
+        attackEnabled = true
         
+        print("[AOTR] ✅ Reload tamamlandı!")
         return true
     end
     
-    -- ========== BIÇAK MONİTÖRÜ ==========
-    local function startBladeMonitor()
+    -- ========== 10 SANİYE RELOAD YOKSA GAS REFILL'E GİT ==========
+    local function startNoReloadMonitor()
         task.spawn(function()
             while true do
-                task.wait(0.3)
+                task.wait(1) -- Her saniye kontrol et
+                
+                -- Sadece attackEnabled ve reload yapmıyorken kontrol et
                 if attackEnabled and not isReloading and not isWaitingForRetry then
-                    if isBladeBroken() then
-                        print("[AOTR] ⚠️ Bıçak kırıldı!")
-                        doNormalReload()
+                    
+                    -- Eğer 10 saniye reload yapılmadıysa ve bıçak kırıksa
+                    local timeSinceLastReload = tick() - lastReloadTime
+                    
+                    if timeSinceLastReload >= 10 and isBladeBroken() then
+                        print("[AOTR] ⚠️ 10 saniyedir reload yapılmadı VE bıçak kırık!")
+                        print("[AOTR] 🏃 Gas Refill'e gidiliyor...")
+                        
+                        -- Gas Refill'e git
+                        if not refillPosition then
+                            findGasRefill()
+                        end
+                        
+                        if refillPosition then
+                            -- Orijinal pozisyonu kaydet
+                            originalCFrame = root.CFrame
+                            
+                            -- Refill'e ışınlan
+                            local targetPos = Vector3.new(refillPosition.X, refillPosition.Y + 3, refillPosition.Z)
+                            pcall(function()
+                                root.CFrame = CFrame.new(targetPos)
+                            end)
+                            task.wait(0.2)
+                            
+                            -- Yere in
+                            local groundPos = Vector3.new(refillPosition.X, refillPosition.Y + 1, refillPosition.Z)
+                            pcall(function()
+                                root.CFrame = CFrame.new(groundPos)
+                            end)
+                            task.wait(0.15)
+                            
+                            print("[AOTR] 🔫 Gas Refill'de R basılıyor...")
+                            
+                            -- R bas (15+ kez)
+                            for i = 1, 15 do
+                                pcall(function()
+                                    vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                                    task.wait(0.03)
+                                    vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                                    task.wait(0.02)
+                                end)
+                            end
+                            
+                            -- Uzun bas
+                            pcall(function()
+                                vi:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                                task.wait(0.5)
+                                vi:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                            end)
+                            
+                            task.wait(0.5)
+                            
+                            -- Orijinal pozisyona dön
+                            if originalCFrame then
+                                pcall(function()
+                                    root.CFrame = originalCFrame
+                                end)
+                            end
+                            
+                            -- Reload zamanını güncelle
+                            lastReloadTime = tick()
+                            
+                            print("[AOTR] ✅ Gas Refill reload tamamlandı!")
+                        else
+                            print("[AOTR] ❌ Gas Refill bulunamadı!")
+                        end
                     end
                 end
             end
@@ -370,8 +335,8 @@
         return list
     end
     
-    -- ========== VURUŞ ==========
-    local function hitTitan(nape, pos)
+    -- ========== HIZLI VURUŞ ==========
+    local function fastHit(nape, pos)
         if not attackEnabled or isReloading or isWaitingForRetry then return end
         
         pcall(function()
@@ -414,7 +379,7 @@
         
         for _, tData in pairs(titans) do
             if attackEnabled and not isReloading and not isWaitingForRetry then
-                hitTitan(tData.nape, tData.pos)
+                fastHit(tData.nape, tData.pos)
                 titansKilled = titansKilled + 1
                 task.wait(0.008)
             end
@@ -469,6 +434,8 @@
                 attackEnabled = true
                 
                 originalCFrame = root.CFrame
+                lastReloadTime = tick() -- Başlangıç reload zamanı
+                
                 print("[AOTR] 🎯 Ana döngü başladı!")
                 
                 while true do
@@ -487,6 +454,27 @@
                 isWaitingForRetry = false
                 attackEnabled = true
                 task.wait(0.5)
+            end
+        end)
+    end
+    
+    -- ========== BIÇAK DURUMU GÖSTERGESİ ==========
+    local function bladeStatusIndicator()
+        task.spawn(function()
+            while true do
+                task.wait(5) -- Her 5 saniyede bir göster
+                if attackEnabled and not isReloading then
+                    local broken = isBladeBroken()
+                    local timeSinceReload = tick() - lastReloadTime
+                    if broken then
+                        print("[AOTR] 🗡️ BIÇAK DURUMU: KIRIK | Son reload: " .. math.floor(timeSinceReload) .. " saniye önce")
+                        if timeSinceReload >= 10 then
+                            print("[AOTR] ⚠️ 10 saniye doldu! Yakında Refill'e gidilecek...")
+                        end
+                    else
+                        print("[AOTR] 🗡️ BIÇAK DURUMU: SAĞLAM | Son reload: " .. math.floor(timeSinceReload) .. " saniye önce")
+                    end
+                end
             end
         end)
     end
@@ -515,29 +503,31 @@
     -- ========== BAŞLAT ==========
     findGasRefill()
     extendNape()
-    setupAutoEscape()  -- AUTO ESCAPE AKTİF
-    startBladeMonitor()
+    setupAutoEscape()
+    startNoReloadMonitor()  -- 10 saniye reload yoksa kontrol et
+    bladeStatusIndicator()   -- Durum göstergesi
     mainLoop()
     
     print("═══════════════════════════════════════════════════════════")
-    print("     AUTO ESCAPE + 4 SANİYE RELOAD + REFILL v12.0")
+    print("    10 SANİYE RELOAD YOKSA GAS REFILL'E GİT v13.0")
     print("═══════════════════════════════════════════════════════════")
-    print("🚪 AUTO ESCAPE ÖZELLİKLERİ:")
-    print("   • Escape butonu çıkınca OTOMATİK TIKLA")
-    print("   • Titan tutunca OTOMATİK Slash_Escape")
-    print("   • Slash_Escape remote'u gönder")
+    print("⏱️ KURAL: 10 saniye boyunca reload YAPILMAZSA ve bıçak KIRIKSA")
+    print("🎯 SONUÇ: Otomatik olarak Gas Refill'e gidip reload yapar")
     print("")
-    print("⚔️ DİĞER ÖZELLİKLER:")
-    print("   • Bıçak kırılınca → Normal R bas (5 kez)")
-    print("   • 4 saniye bekle")
-    print("   • Hala kırıksa → Gas Refill'e ışınlan")
-    print("   • 15+ kez R bas → Geri dön")
+    print("🔄 NORMAL RELOAD:")
+    print("   • Bıçak kırılınca hemen reload yapar")
+    print("   • Reload zamanını kaydeder")
+    print("")
+    print("⏰ 10 SANİYE MONİTÖRÜ:")
+    print("   • Her saniye kontrol eder")
+    print("   • 10 saniye reload yoksa + bıçak kırıksa → REFILL'E GİT")
+    print("   • Refill'de 15+ kez R bas → Geri dön")
     print("═══════════════════════════════════════════════════════════")
     
     if refillPosition then
-        print("🎯 REFILL KONUMU: " .. tostring(refillPosition))
-        print("✅ Sistem HAZIR!")
+        print("🎯 GAS REFILL KONUMU: " .. tostring(refillPosition))
     end
+    print("✅ Sistem HAZIR! Bıçak kırılırsa reload yapar, 10 saniye reload yoksa Refill'e gider!")
     
     print = function() end
     warn = function() end
