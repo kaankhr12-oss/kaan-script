@@ -1,0 +1,478 @@
+-- Lumiy Hub - Only Spear (No Spam, Fast Spawn)
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Window = Library:CreateWindow({
+    Title = "Lumiy Hub",
+    Footer = "Only Spear | Fast Spawn | No Spam",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    RaidMission = Window:AddTab("Raid-Mission", "sword"),
+    Auto = Window:AddTab("Auto", "clock"),
+    Config = Window:AddTab("Config", "settings"),
+    ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
+}
+
+local player = game.Players.LocalPlayer
+local rs = game:GetService("ReplicatedStorage")
+local vi = game:GetService("VirtualInputManager")
+local assets = rs:FindFirstChild("Assets")
+local remotes = assets and assets:FindFirstChild("Remotes")
+local POST = remotes and remotes:FindFirstChild("POST")
+local GET = remotes and remotes:FindFirstChild("GET")
+
+local function getCharacter() return player.Character or player.CharacterAdded:Wait() end
+local function getRoot() local c = getCharacter() return c:FindFirstChild("HumanoidRootPart") end
+local function getHumanoid() local c = getCharacter() return c:FindFirstChildOfClass("Humanoid") end
+
+local instantSpawnEnabled = true
+local alreadySpawned = false
+
+local function forceInstantTitans()
+    if not instantSpawnEnabled or alreadySpawned then return end
+    local w = workspace:FindFirstChild("W")
+    if w then
+        w:SetAttribute("Intermission_Countdown", 0)
+        w:SetAttribute("Finalised", true)
+        alreadySpawned = true
+    end
+    local pg = player:FindFirstChild("PlayerGui")
+    if pg then
+        local loader = pg:FindFirstChild("Loader")
+        if loader and loader.Visible then
+            loader.Visible = false
+            loader:Destroy()
+        end
+    end
+    if POST then
+        pcall(function()
+            POST:FireServer("Cutscenes", "Skip")
+            POST:FireServer("Cutscenes", "Finished")
+        end)
+    end
+    local char = player.Character
+    if char then char:SetAttribute("Cutscene", nil) end
+end
+
+local function onWaveChanged()
+    alreadySpawned = false
+    task.wait(0.5)
+    forceInstantTitans()
+end
+
+local function startInstantSpawn()
+    local w = workspace:FindFirstChild("W")
+    if w then
+        w:GetAttributeChangedSignal("Intermission_Countdown"):Connect(onWaveChanged)
+        w:GetAttributeChangedSignal("Finalised"):Connect(onWaveChanged)
+    end
+    forceInstantTitans()
+end
+
+local function stopInstantSpawn()
+    instantSpawnEnabled = false
+end
+
+local function patchModule(mod)
+    if type(mod) ~= "table" then return end
+    pcall(function()
+        if mod.Damage then
+            local orig = mod.Damage
+            mod.Damage = function(...)
+                local args = {...}
+                if args[6] then args[6] = 999999 end
+                if args[9] then args[9] = 999999 end
+                return orig(unpack(args))
+            end
+        end
+    end)
+    pcall(function()
+        if mod.DoDamage then
+            local origDo = mod.DoDamage
+            mod.DoDamage = function(...)
+                local args = {...}
+                if args[4] then args[4] = 999999 end
+                return origDo(unpack(args))
+            end
+        end
+    end)
+end
+
+local function patchAllDamage()
+    local modules = rs:FindFirstChild("Modules")
+    if not modules then return end
+    local skills = modules:FindFirstChild("Skills")
+    if not skills then return end
+    for _, folder in ipairs(skills:GetChildren()) do
+        if folder.Name == "Spears" then
+            for _, child in ipairs(folder:GetChildren()) do
+                local success, mod = pcall(require, child)
+                if success then patchModule(mod) end
+            end
+        end
+    end
+end
+
+local spearActive = false
+local spearLoop = nil
+local spearBodyPos = nil
+
+local function getTitanType(titan)
+    if not titan then return nil end
+    local name = titan.Name:lower()
+    if name:find("colossal") then return "colossal"
+    elseif name:find("armored") then return "armored"
+    elseif name:find("female") then return "female"
+    elseif name:find("attack") then return "attack"
+    end
+    local attr = titan:GetAttribute("Type")
+    if attr then
+        local la = attr:lower()
+        if la == "colossal" then return "colossal"
+        elseif la == "armored" then return "armored"
+        elseif la == "female" then return "female"
+        elseif la == "attack" then return "attack"
+        end
+    end
+    return nil
+end
+
+local function getSpearTargets()
+    local specials, normals = {}, {}
+    local container = workspace:FindFirstChild("Titans")
+    if not container then return {}, false end
+    for _, titan in ipairs(container:GetChildren()) do
+        if titan:IsA("Model") then
+            local hum = titan:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local hitboxes = titan:FindFirstChild("Hitboxes")
+                if hitboxes then
+                    local hit = hitboxes:FindFirstChild("Hit")
+                    if hit then
+                        local nape = hit:FindFirstChild("Nape")
+                        if nape then
+                            local pos = nape.Position
+                            local tt = getTitanType(titan)
+                            if tt then
+                                table.insert(specials, {pos = pos, type = tt})
+                            else
+                                table.insert(normals, {pos = pos, type = nil})
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if #specials > 0 then return specials, true else return normals, false end
+end
+
+local function getHoverForType(tt)
+    if tt == "colossal" then return 300
+    elseif tt == "armored" or tt == "female" or tt == "attack" then return 200
+    else return 150 end
+end
+
+local function stopSpearFlight()
+    if spearBodyPos then spearBodyPos:Destroy(); spearBodyPos = nil end
+    local hum = getHumanoid()
+    if hum then hum.PlatformStand = false; hum.AutoRotate = true end
+end
+
+local function startSpearFlight(targetPos, hoverHeight)
+    local root = getRoot()
+    if not root or not targetPos then return end
+    local hum = getHumanoid()
+    if hum then hum.PlatformStand = true; hum.AutoRotate = false end
+    if not spearBodyPos then
+        spearBodyPos = Instance.new("BodyPosition")
+        spearBodyPos.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+        spearBodyPos.D = 1000
+        spearBodyPos.P = 20000
+        spearBodyPos.Parent = root
+    end
+    spearBodyPos.Position = targetPos + Vector3.new(0, hoverHeight, 0)
+end
+
+local function spearAttack(list, isSpecial)
+    if #list == 0 or not POST then return end
+    for _, data in ipairs(list) do
+        local pos = data.pos
+        local fireCount = isSpecial and 10 or 1
+        local delay = isSpecial and 0.1 or 0.05
+        for i = 1, fireCount do
+            pcall(function()
+                POST:FireServer("Spears", "S_Fire", tostring(i))
+                POST:FireServer("Spears", "S_Explode", pos)
+            end)
+            task.wait(delay)
+        end
+    end
+end
+
+local function spearRetry()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if playerGui then
+        local interface = playerGui:FindFirstChild("Interface")
+        if interface then
+            local rewards = interface:FindFirstChild("Rewards")
+            if rewards then
+                local main = rewards:FindFirstChild("Main")
+                if main then
+                    local info = main:FindFirstChild("Info")
+                    if info then
+                        local mainInfo = info:FindFirstChild("Main")
+                        if mainInfo then
+                            local buttons = mainInfo:FindFirstChild("Buttons")
+                            if buttons then
+                                local retry = buttons:FindFirstChild("Retry")
+                                if retry then
+                                    local title = retry:FindFirstChild("Title")
+                                    if title then
+                                        local x = title.AbsolutePosition.X + title.AbsoluteSize.X / 2
+                                        local y = title.AbsolutePosition.Y + title.AbsoluteSize.Y / 2 + 45
+                                        vi:SendMouseButtonEvent(x, y, 0, true, game, 0)
+                                        task.wait(0.05)
+                                        vi:SendMouseButtonEvent(x, y, 0, false, game, 0)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if POST then
+        pcall(function() POST:FireServer("Retry") end)
+        pcall(function() POST:FireServer("Raids", "Retry") end)
+    end
+    task.wait(2)
+end
+
+local function spearFarmLoop()
+    local lastRetryTime = 0
+    while spearActive do
+        if not POST then task.wait(0.5) continue end
+        local root = getRoot()
+        if not root then task.wait(0.5) continue end
+        local ok, list, isSpecial = pcall(getSpearTargets)
+        if not ok then task.wait(0.5) continue end
+        if #list > 0 then
+            local cp = root.Position
+            local closest, bestDist, bestHover = nil, math.huge, 150
+            for _, data in ipairs(list) do
+                local d = (cp - data.pos).Magnitude
+                if d < bestDist then
+                    bestDist, closest, bestHover = d, data.pos, getHoverForType(data.type)
+                end
+            end
+            if closest then startSpearFlight(closest, bestHover) end
+            spearAttack(list, isSpecial)
+            task.wait(0.2)
+        else
+            if tick() - lastRetryTime > 8 then
+                lastRetryTime = tick()
+                task.spawn(function()
+                    spearRetry()
+                end)
+            end
+            startSpearFlight(Vector3.new(0, 1000, 0), 1000)
+            task.wait(0.5)
+        end
+    end
+end
+
+local function startSpear()
+    if spearActive then return end
+    spearActive = true
+    spearLoop = task.spawn(spearFarmLoop)
+end
+
+local function stopSpear()
+    if not spearActive then return end
+    spearActive = false
+    if spearLoop then task.cancel(spearLoop); spearLoop = nil end
+    stopSpearFlight()
+end
+
+local autoFreeChest = true
+local autoPremiumChest = true
+local autoRetryEnabled = true
+local autoSkipEnabled = true
+
+local function globalRetry()
+    if not autoRetryEnabled then return end
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if playerGui then
+        local interface = playerGui:FindFirstChild("Interface")
+        if interface then
+            local rewards = interface:FindFirstChild("Rewards")
+            if rewards then
+                local main = rewards:FindFirstChild("Main")
+                if main then
+                    local info = main:FindFirstChild("Info")
+                    if info then
+                        local mainInfo = info:FindFirstChild("Main")
+                        if mainInfo then
+                            local buttons = mainInfo:FindFirstChild("Buttons")
+                            if buttons then
+                                local retry = buttons:FindFirstChild("Retry")
+                                if retry then
+                                    local title = retry:FindFirstChild("Title")
+                                    if title then
+                                        local x = title.AbsolutePosition.X + title.AbsoluteSize.X / 2
+                                        local y = title.AbsolutePosition.Y + title.AbsoluteSize.Y / 2 + 45
+                                        vi:SendMouseButtonEvent(x, y, 0, true, game, 0)
+                                        task.wait(0.05)
+                                        vi:SendMouseButtonEvent(x, y, 0, false, game, 0)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if POST then
+        pcall(function() POST:FireServer("Retry") end)
+        pcall(function() POST:FireServer("Raids", "Retry") end)
+    end
+end
+
+local function skipCutscene()
+    if not autoSkipEnabled then return end
+    if POST then
+        pcall(function() POST:FireServer("Cutscenes", "Skip") end)
+        pcall(function() POST:FireServer("Cutscenes", "Finished") end)
+    end
+    local char = player.Character
+    if char then char:SetAttribute("Cutscene", nil) end
+end
+
+local function clickGuiButton(btn)
+    if not btn or not btn.Visible then return false end
+    local x = btn.AbsolutePosition.X + btn.AbsoluteSize.X/2
+    local y = btn.AbsolutePosition.Y + btn.AbsoluteSize.Y/2 + 45
+    vi:SendMouseButtonEvent(x, y, 0, true, game, 0)
+    task.wait(0.05)
+    vi:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    return true
+end
+
+local function openChests()
+    if not autoFreeChest and not autoPremiumChest then return end
+    local pg = player:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local interface = pg:FindFirstChild("Interface")
+    if not interface then return end
+    local chests = interface:FindFirstChild("Chests")
+    if not chests or not chests.Visible then return end
+
+    if autoFreeChest then
+        local free = chests:FindFirstChild("Free")
+        if free and free.Visible then clickGuiButton(free) task.wait(0.5) end
+    end
+    if autoPremiumChest then
+        local premium = chests:FindFirstChild("Premium")
+        if premium and premium.Visible then
+            local title = premium:FindFirstChild("Title")
+            if title and title:IsA("TextLabel") and not title.Text:find("(0)") then
+                clickGuiButton(premium)
+                task.wait(0.5)
+            end
+        end
+    end
+    task.wait(0.3)
+    local finish = chests:FindFirstChild("Finish")
+    if finish and finish.Visible then
+        local freeStill = chests:FindFirstChild("Free")
+        local premiumStill = chests:FindFirstChild("Premium")
+        if (autoFreeChest and freeStill and freeStill.Visible) or (autoPremiumChest and premiumStill and premiumStill.Visible) then return end
+        clickGuiButton(finish)
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(2)
+        pcall(function()
+            if autoSkipEnabled then
+                local char = player.Character
+                if char and char:GetAttribute("Cutscene") == true then skipCutscene() end
+                local pg = player:FindFirstChild("PlayerGui")
+                if pg and pg:FindFirstChild("Interface") then
+                    local int = pg.Interface
+                    local skipBtn = int:FindFirstChild("Skip") or (int:FindFirstChild("Skip_Warning") and int.Skip_Warning:FindFirstChild("Yes"))
+                    if skipBtn and skipBtn.Visible then clickGuiButton(skipBtn) end
+                end
+            end
+            openChests()
+        end)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(3)
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health <= 0 then
+            globalRetry()
+            task.wait(3)
+        end
+    end
+end)
+
+local SpearGroup = Tabs.RaidMission:AddLeftGroupbox("Spear Farm (Normal: 1 spear 0.05s | Special: 10 spear 0.1s)")
+local spearToggle = SpearGroup:AddToggle("SpearToggle", {
+    Text = "Enable Spear Farm",
+    Default = false,
+    Callback = function(v) if v then startSpear() else stopSpear() end end,
+})
+spearToggle:AddKeyPicker("SpearKeybind", { Default = "F", Mode = "Toggle", Text = "Toggle Spear Farm" })
+SpearGroup:AddButton({ Text = "Start Spear", Func = function() spearToggle:SetValue(true) end })
+SpearGroup:AddButton({ Text = "Stop Spear", Func = function() spearToggle:SetValue(false) end })
+
+local AutoGroup = Tabs.Auto:AddLeftGroupbox("Global Auto Features")
+AutoGroup:AddToggle("AutoFreeChest", { Text = "Auto Open FREE Chest", Default = true, Callback = function(v) autoFreeChest = v end })
+AutoGroup:AddToggle("AutoPremiumChest", { Text = "Auto Open PREMIUM Chest", Default = true, Callback = function(v) autoPremiumChest = v end })
+AutoGroup:AddDivider()
+AutoGroup:AddToggle("AutoRetry", { Text = "Auto Retry (on death)", Default = true, Callback = function(v) autoRetryEnabled = v end })
+AutoGroup:AddToggle("AutoSkip", { Text = "Auto Skip Cutscenes", Default = true, Callback = function(v) autoSkipEnabled = v end })
+AutoGroup:AddButton({ Text = "Manual Retry", Func = function() globalRetry(); Library:Notify("Retry triggered", 2) end })
+AutoGroup:AddDivider()
+AutoGroup:AddToggle("InstantTitanSpawn", { Text = "Instant Titan Spawn (No Spam)", Default = true, Callback = function(v) 
+    instantSpawnEnabled = v
+    if v then startInstantSpawn() else stopInstantSpawn() end
+end })
+
+SaveManager:SetLibrary(Library)
+SaveManager:SetFolder("LumiyHub_SpearOnly")
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+SaveManager:IgnoreThemeSettings()
+SaveManager:BuildConfigSection(Tabs.Config)
+
+ThemeManager:SetLibrary(Library)
+ThemeManager:SetFolder("LumiyHub_SpearOnly")
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+
+SaveManager:LoadAutoloadConfig()
+
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu Settings")
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = false })
+MenuGroup:AddToggle("ShowCustomCursor", { Text = "Custom Cursor", Default = true, Callback = function(v) Library.ShowCustomCursor = v end })
+MenuGroup:AddButton("Unload", function()
+    stopSpear()
+    stopInstantSpawn()
+    Library:Unload()
+end)
+
+task.wait(1)
+pcall(patchAllDamage)
+startInstantSpawn()
+Library:Notify("Lumiy Hub - Only Spear | Normal: 1 spear 0.05s | Special: 10 spear 0.1s | F tusu ile ac/kapat", 5)
